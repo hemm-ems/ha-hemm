@@ -21,9 +21,8 @@ CONFIG_DIR = Path(__file__).parent / "config"
 
 
 def pytest_collection_modifyitems(items: list) -> None:
-    """Mark all integration tests with session loop scope and enable sockets."""
+    """Enable sockets for integration tests (pytest-socket blocks by default)."""
     for item in items:
-        item.add_marker(pytest.mark.asyncio(loop_scope="session"))
         item.add_marker(pytest.mark.enable_socket)
 
 
@@ -80,11 +79,11 @@ def docker_compose_up(ha_version: str):
     )
 
 
-@pytest_asyncio.fixture(scope="session")
-async def ha_client(docker_compose_up: None, ha_base_url: str) -> AsyncGenerator[HactlClient, None]:
-    """Create an authenticated hactl client.
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def ha_token(docker_compose_up: None, ha_base_url: str) -> str:
+    """Perform onboarding and return a long-lived access token.
 
-    Waits for HA to be ready, performs onboarding if needed, returns client with token.
+    Waits for HA to be ready, performs onboarding if needed, returns token.
     """
     async with HactlClient(base_url=ha_base_url) as client:
         ready = await client.wait_for_ready(timeout=120.0)
@@ -99,5 +98,13 @@ async def ha_client(docker_compose_up: None, ha_base_url: str) -> AsyncGenerator
             if not token:
                 msg = "HA is already onboarded but no HA_TOKEN provided"
                 raise RuntimeError(msg)
+            client._token = token
 
+        return client._token
+
+
+@pytest_asyncio.fixture
+async def ha_client(ha_token: str, ha_base_url: str) -> AsyncGenerator[HactlClient, None]:
+    """Create a per-test authenticated hactl client."""
+    async with HactlClient(base_url=ha_base_url, token=ha_token) as client:
         yield client

@@ -41,7 +41,8 @@ class HactlClient:
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
         connector = aiohttp.TCPConnector(use_dns_cache=True, resolver=aiohttp.ThreadedResolver())
-        self._session = aiohttp.ClientSession(headers=headers, connector=connector)
+        timeout = aiohttp.ClientTimeout(total=30)
+        self._session = aiohttp.ClientSession(headers=headers, connector=connector, timeout=timeout)
         return self
 
     async def __aexit__(self, *args: object) -> None:
