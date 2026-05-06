@@ -97,6 +97,10 @@ jobs:
           docker compose -f docker-compose.test.yml up -d --wait
         timeout-minutes: 3
 
+      - name: Pre-install hemm core into container
+        run: |
+          docker exec hemm-ha-test pip install --quiet git+https://github.com/swifty99/hemm.git
+
       - name: Run container tests
         run: |
           uv run pytest tests/integration/ --tb=short -v -o "addopts="
