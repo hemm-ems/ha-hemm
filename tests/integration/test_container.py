@@ -226,7 +226,8 @@ async def test_hemm_add_device_via_options(ha_client: HactlClient, device_config
     assert result.status == 200, f"Failed select_device step: {result.data}"
     assert result.data.get("step_id") == "configure_device"
 
-    # Step 3: configure device
-    result = await ha_client.configure_options_flow(flow_id, device_config)
+    # Step 3: configure device (exclude device_type — it was sent in select_device)
+    configure_data = {k: v for k, v in device_config.items() if k != "device_type"}
+    result = await ha_client.configure_options_flow(flow_id, configure_data)
     assert result.status == 200, f"Failed configure_device step: {result.data}"
     assert result.data.get("type") == "create_entry", f"Expected create_entry, got: {result.data}"
