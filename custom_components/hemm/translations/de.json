@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HEMM Energieoptimierer",
+        "description": "HEMM Energieoptimierungs-Hub einrichten.",
+        "data": {
+          "name": "Name",
+          "horizon_hours": "Planungshorizont (Stunden)",
+          "max_iterations": "Maximale Solver-Iterationen",
+          "price_adapter": "Preisquelle",
+          "solver_backend": "Solver-Backend"
+        },
+        "data_description": {
+          "horizon_hours": "Wie weit voraus der Optimierer plant (1–72 Stunden).",
+          "max_iterations": "Maximale Anzahl Solver-Iterationen pro Planungszyklus.",
+          "price_adapter": "Quelle für Strompreisprognosen.",
+          "solver_backend": "Optimierungsalgorithmus: Zentrales MILP oder verteilt."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "HEMM ist bereits konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HEMM Optionen",
+        "description": "HEMM Optimierungsparameter anpassen.",
+        "data": {
+          "horizon_hours": "Planungshorizont (Stunden)",
+          "max_iterations": "Maximale Solver-Iterationen",
+          "price_adapter": "Preisquelle",
+          "solver_backend": "Solver-Backend"
+        }
+      }
+    }
+  },
+  "issues": {
+    "solver_degraded": {
+      "title": "Solver-Leistung eingeschränkt",
+      "description": "Der HEMM-Solver konnte nicht innerhalb der erwarteten Zeit konvergieren. Dies kann auf ein Konfigurationsproblem oder eine zu hohe Geräteanzahl hinweisen."
+    }
+  }
+}

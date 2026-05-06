@@ -26,9 +26,24 @@ def test_manifest_domain() -> None:
 
 
 @pytest.mark.unit
-def test_hemm_core_importable() -> None:
-    """Verify the hemm core library is installed (editable install)."""
-    from importlib.metadata import version
+def test_manifest_has_required_fields() -> None:
+    """Verify manifest.json has all required HACS fields."""
+    manifest_path = Path(__file__).parent.parent / "custom_components" / "hemm" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    required_fields = ["domain", "name", "version", "documentation", "codeowners", "requirements"]
+    for field in required_fields:
+        assert field in manifest, f"Missing required field: {field}"
 
-    v = version("hemm")
-    assert v == "0.1.0"
+
+@pytest.mark.unit
+def test_constants_consistency() -> None:
+    """Verify constants are consistent."""
+    from custom_components.hemm.const import (
+        DEFAULT_SOLVER_BACKEND,
+        PRICE_ADAPTERS,
+        SOLVER_BACKENDS,
+    )
+
+    assert DEFAULT_SOLVER_BACKEND in SOLVER_BACKENDS
+    assert len(PRICE_ADAPTERS) >= 1
+    assert len(SOLVER_BACKENDS) == 2

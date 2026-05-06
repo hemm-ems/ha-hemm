@@ -3,11 +3,44 @@
     "step": {
       "user": {
         "title": "HEMM Energy Optimizer",
-        "description": "Set up the HEMM energy optimizer.",
+        "description": "Set up the HEMM energy optimization hub.",
         "data": {
-          "name": "Name"
+          "name": "Name",
+          "horizon_hours": "Planning horizon (hours)",
+          "max_iterations": "Maximum solver iterations",
+          "price_adapter": "Price source adapter",
+          "solver_backend": "Solver backend"
+        },
+        "data_description": {
+          "horizon_hours": "How far ahead the optimizer plans (1–72 hours).",
+          "max_iterations": "Maximum number of solver iterations per planning cycle.",
+          "price_adapter": "Source for electricity price forecasts.",
+          "solver_backend": "Optimization algorithm: central MILP or distributed."
         }
       }
+    },
+    "abort": {
+      "already_configured": "HEMM is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HEMM Options",
+        "description": "Adjust HEMM optimization parameters.",
+        "data": {
+          "horizon_hours": "Planning horizon (hours)",
+          "max_iterations": "Maximum solver iterations",
+          "price_adapter": "Price source adapter",
+          "solver_backend": "Solver backend"
+        }
+      }
+    }
+  },
+  "issues": {
+    "solver_degraded": {
+      "title": "Solver performance degraded",
+      "description": "The HEMM solver did not converge within the expected time. This may indicate a configuration issue or excessive device count."
     }
   }
 }
