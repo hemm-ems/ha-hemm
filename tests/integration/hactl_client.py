@@ -259,8 +259,7 @@ class HactlClient:
         """Reload a config entry."""
         assert self._session is not None
         async with self._session.post(
-            self._url("/api/config/config_entries/entry/reload"),
-            json={"entry_id": entry_id},
+            self._url(f"/api/config/config_entries/entry/{entry_id}/reload"),
         ) as resp:
             if resp.content_type == "application/json":
                 data = await resp.json()
