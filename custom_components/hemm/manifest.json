@@ -1,0 +1,11 @@
+{
+  "domain": "hemm",
+  "name": "HEMM Energy Optimizer",
+  "codeowners": ["@hemm-energy"],
+  "config_flow": true,
+  "documentation": "https://github.com/hemm-energy/ha-hemm",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "requirements": ["hemm==0.1.0"],
+  "version": "0.1.0"
+}
