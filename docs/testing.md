@@ -12,7 +12,7 @@ ha-hemm's tests are organized into three layers, each with a different scope and
 
 **Unit tests** are the fastest and cheapest. They cover config flows, device flows, coordinator lifecycle, diagnostics, sensor creation, and identification stubs — all running in-process against a simulated HA runtime provided by `pytest-homeassistant-custom-component`. No Docker, no network, no hactl. They run in under 10 seconds and serve as a quick sanity check during development.
 
-**Container tests** are the main event. They start a real Home Assistant instance (and a companion addon) in Docker containers, run hactl commands against them, and check the output. These tests are slower (roughly two minutes once Docker images are cached, longer on first pull), but they are the ones that tell us whether the integration actually works in a real HA installation. Every interaction with HA goes through the real [hactl](https://github.com/swifty99/hactl) CLI binary — the same tool a human would use — rather than a purpose-built Python test client.
+**Container tests** are the main event. They start a real Home Assistant instance in a Docker container, install the companion addon inside it, run hactl commands against the running HA, and check the output. These tests are slower (roughly two minutes once Docker images are cached, longer on first pull), but they are the ones that tell us whether the integration actually works in a real HA installation. Every interaction with HA goes through the real [hactl](https://github.com/swifty99/hactl) CLI binary — the same tool a human would use — rather than a purpose-built Python test client.
 
 **Pi tests** cover hardware validation on a Raspberry Pi running HA OS. They verify that HEMM performs acceptably under realistic resource constraints (ARM CPU, limited RAM, SD card I/O). These are not automated in CI; they run manually against a physical Pi instance using hactl pointed at the Pi's IP. This layer is planned for Phase 8.
 
@@ -87,65 +87,69 @@ The first run takes roughly 3–4 minutes because Docker has to pull the Home As
 
 ### How the container stack works
 
-The test stack is defined in `docker-compose.test.yml` and consists of two containers on a shared Docker network:
+The test stack is defined in `docker-compose.test.yml` and consists of a single HA container with the companion running inside it:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Docker Network: ha-hemm_ha-net                             │
-│                                                             │
-│  ┌───────────────────────┐  ┌─────────────────────────────┐│
-│  │ hemm-ha-test          │  │ hemm-companion-test         ││
-│  │ HA Core (stable)      │  │ hactl-companion             ││
-│  │ Port: 8123            │  │ Port: 9100                  ││
-│  │                       │  │                             ││
-│  │ Volumes:              │  │ Volumes:                    ││
-│  │ - ha-config:/config   │  │ - ha-config:/config (shared)││
-│  │ - custom_components/  │  │                             ││
-│  │   hemm (bind, ro)     │  │ Auth:                       ││
-│  │ - ../hemm (bind, ro)  │  │ SUPERVISOR_TOKEN=           ││
-│  │ - configuration.yaml  │  │ integration-test-token-...  ││
-│  └───────────────────────┘  └─────────────────────────────┘│
-└─────────────────────────────────────────────────────────────┘
-         ▲                               ▲
-         │ REST/WS API                   │ REST API
-         │                               │
-    ┌────┴──────────────────────────┐    │
-    │  Test runner (pytest on host) │    │
-    │  └─ hactl binary (subprocess)├────┘
-    │     └─ --dir <tmpdir>/.env   │
-    └──────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│  hemm-ha-test container                              │
+│                                                      │
+│  ┌──────────────────────────┐  ┌──────────────────┐  │
+│  │ HA Core (stable)         │  │ hactl-companion   │  │
+│  │ Port: 8123 (→ host)      │  │ Port: 9100 (→ h) │  │
+│  └──────────────────────────┘  └──────────────────┘  │
+│                                                      │
+│  Volumes:                                            │
+│  - ha-config:/config                                 │
+│  - custom_components/hemm (bind, ro)                 │
+│  - ../hemm (bind, ro at /hemm-src)                   │
+│  - configuration.yaml (bind, ro)                     │
+│                                                      │
+│  pip install: hemm core + hactl_companion            │
+│  Companion started as background process             │
+│  SUPERVISOR_TOKEN=integration-test-token-12345       │
+└──────────────────────────────────────────────────────┘
+         ▲
+         │ REST/WS API (8123) + Companion API (9100)
+         │
+    ┌────┴──────────────────────────┐
+    │  Test runner (pytest on host) │
+    │  └─ hactl binary (subprocess) │
+    │     └─ --dir <tmpdir>/.env    │
+    │        HA_URL + HA_TOKEN +    │
+    │        COMPANION_URL          │
+    └───────────────────────────────┘
 ```
 
 **Home Assistant container** (`hemm-ha-test`): Runs the real HA Core image. The hemm custom component is bind-mounted read-only at `/config/custom_components/hemm`. The hemm core library source is mounted at `/hemm-src` and pip-installed into the container (hemm is not yet on PyPI, so HA can't install it from `manifest.json` requirements automatically). A `configuration.yaml` fixture is also bind-mounted.
 
-**Companion container** (`hemm-companion-test`): Runs the [hactl-companion](https://github.com/swifty99/hactl_companion) addon, which provides YAML filesystem access that HA's REST/WS API doesn't expose (reading `configuration.yaml`, listing config files, template evaluation with filesystem context). Shares the same `ha-config` Docker volume as HA. Auth uses a static `SUPERVISOR_TOKEN` set via environment variable.
+**Companion** (inside the HA container): The [hactl-companion](https://github.com/swifty99/hactl_companion) is pip-installed into the HA container and started as a background process. It provides YAML filesystem access that HA's REST/WS API doesn't expose (reading `configuration.yaml`, listing config files, template evaluation with filesystem context). It runs on port 9100, exposed to the host. Auth uses a static `SUPERVISOR_TOKEN` set via environment variable.
 
-**hactl binary**: The real [hactl](https://github.com/swifty99/hactl) Go CLI binary, downloaded from GitHub releases to `.bin/hactl`. All test assertions go through this binary via subprocess calls — the same commands a human developer would use. This ensures tests verify the actual user-facing behavior, not an internal API that might drift.
-
-**Python HactlClient** (`hactl_client.py`): Retained *only* for container onboarding. HA requires an interactive onboarding flow before its API becomes available, and the final step (creating a long-lived access token) requires a WebSocket connection. The Python client handles this setup, then all subsequent test interactions use the hactl binary exclusively.
+**hactl binary**: The real [hactl](https://github.com/swifty99/hactl) Go CLI binary, downloaded from GitHub releases to `.bin/hactl`. All test assertions go through this binary via subprocess calls — the same commands a human developer would use. The hactl `.env` includes `COMPANION_URL=http://127.0.0.1:9100` so hactl auto-discovers the companion.
 
 ### Container lifecycle (what `make docker-up` does)
 
-1. `docker compose up -d` starts both containers
-2. Wait for HA to become healthy (polling `/api/onboarding` via healthcheck)
-3. `docker exec hemm-ha-test pip install /hemm-src` installs the hemm core library
+1. `docker compose up -d --wait` starts the HA container and waits for it to be healthy
+2. `pip install /hemm-src` inside the container installs the hemm core library
+3. `pip install git+https://github.com/swifty99/hactl_companion.git` installs the companion
 4. `docker restart hemm-ha-test` restarts HA so it picks up the hemm package
-5. Wait for HA healthy again
-6. Wait for companion healthy (polling `http://127.0.0.1:9100/v1/health`)
+5. `docker compose up -d --wait` waits for HA healthy again
+6. Companion started as background process (`SUPERVISOR_TOKEN=... python3 -m companion`)
+7. Poll `http://127.0.0.1:9100/v1/health` until companion is ready
 
 ### Onboarding (handled by pytest fixtures)
 
 When tests start, the `ha_token` session-scoped fixture:
 
-1. Checks for a cached token at `.bin/.ha_test_token` (for `SKIP_DOCKER_COMPOSE=1` mode)
-2. If no cached token: runs headless onboarding via `HactlClient`:
+1. Waits for HA to be ready (polling `/api/`)
+2. Checks if HA still needs onboarding (via `/api/onboarding`)
+3. If onboarding needed, runs headless onboarding using stdlib `urllib`:
    - `POST /api/onboarding/users` — creates owner account
-   - `POST /auth/token` — exchanges auth code for short-lived tokens
+   - `POST /auth/token` — exchanges auth code for access token
+   - `POST /api/onboarding/core_config` and `/api/onboarding/analytics` — completes onboarding steps
    - WebSocket `auth/long_lived_access_token` — creates a long-lived token
-   - `POST /api/onboarding/core_config` and `/api/onboarding/analytics` — completes onboarding
-3. Writes token to `.bin/.ha_test_token` for reuse
-4. Creates a temp directory with `.env` file (`HA_URL` + `HA_TOKEN`) for hactl
-5. Returns the `Hactl` wrapper object that all tests use
+4. Caches token to `.bin/.ha_test_token` for reuse with `SKIP_DOCKER_COMPOSE=1`
+5. Creates a temp directory with `.env` file (`HA_URL` + `HA_TOKEN` + `COMPANION_URL`) for hactl
+6. Returns the `Hactl` wrapper object that all tests use
 
 ### What the container tests cover
 
@@ -154,7 +158,7 @@ Every test file exercises a distinct area of the integration through the real ha
 | Test file | Tests | What it checks |
 |---|---|---|
 | `test_container.py` | 14 | Core integration lifecycle: HA healthy, hactl version, config flow setup, integration loaded, entities visible, reload works, no error logs, add all 7 device types via options flow |
-| `test_hactl_companion.py` | 14 | Companion addon: health endpoint, version, config file listing, read `configuration.yaml`, secrets denied, path traversal denied, template evaluation (simple + states + invalid), script listing, automation listing, service calls |
+| `test_hactl_companion.py` | 8 | Companion features via hactl: template evaluation (simple + states + invalid), script listing, automation listing, service calls |
 | `test_hactl_config.py` | 13 | Config flow lifecycle: flow start returns form, data schema present, flow inspect, flow creates entry, abort on duplicate, config entries listing, entry data validation, options flow start/add device/add battery/safe_default required, reload keeps entry, config check passes |
 | `test_hactl_entities.py` | 11 | Entity discovery: domain sensor listing, hemm pattern matching, all entities accessible, per-device sensors (battery 3 sensors, EV charger sensors), entity show/full/naming/history/related/anomalies (6 skipped — see Honest Gaps) |
 | `test_hactl_health.py` | 9 | System health: HA running, version reporting, hactl binary version, custom component visibility via `cc ls` and `cc logs`, error log summary, component log filter, no unresolved hemm issues |
@@ -186,16 +190,13 @@ Unlike hactl's multi-fixture approach (basic/faulty/realistic), ha-hemm currentl
 
 ### Companion addon
 
-The companion gives hactl filesystem access to the HA config directory. In tests, it is used for:
+The companion runs inside the HA container as a pip-installed Python package. It gives hactl filesystem access to the HA config directory. In tests, it is used for:
 
-- Reading `configuration.yaml` to verify the test fixture loaded correctly
 - Template evaluation (`hactl tpl eval '{{ states("sensor.x") }}'`)
 - Listing scripts and automations
-- Security boundary testing (secrets denied, path traversal denied)
+- Service calls via hactl
 
-The companion container requires a workaround for standalone Docker use: the published image's `/run.sh` uses a bashio shebang that only exists in HA OS. The docker-compose file overrides this with `command: ["python3", "-m", "companion"]`.
-
-Companion tests are isolated in `test_hactl_companion.py`. If the companion is unavailable, tests skip gracefully (they do not fail).
+The companion is installed and started automatically during container setup. If it fails to start, companion-dependent tests skip gracefully (they do not fail).
 
 ---
 
@@ -260,11 +261,15 @@ uv run ruff format --check custom_components/ tests/
 uv run pytest
 
 # Equivalent of "make test-container" (manual steps on Windows)
-docker compose -f docker-compose.test.yml up -d
+docker compose -f docker-compose.test.yml up -d --wait
 # Wait for HA healthy...
 docker exec hemm-ha-test pip install /hemm-src
+docker exec hemm-ha-test pip install git+https://github.com/swifty99/hactl_companion.git
 docker restart hemm-ha-test
-# Wait for HA healthy again...
+docker compose -f docker-compose.test.yml up -d --wait
+# Start companion inside HA container
+docker exec -d hemm-ha-test sh -c 'SUPERVISOR_TOKEN=integration-test-token-12345 python3 -m companion'
+# Wait for companion healthy...
 $env:SKIP_DOCKER_COMPOSE="1"
 uv run pytest tests/integration/ -m container --tb=short -v -o "addopts="
 docker compose -f docker-compose.test.yml down -v --remove-orphans
@@ -301,7 +306,7 @@ docker context ls  # Should show "default" → unix:///var/run/docker.sock
 
 **Volume mounts**: Named Docker volumes work identically. Bind mounts must use Linux paths in WSL. Always run tests from within the WSL filesystem (`~/repos/...`), not from `/mnt/c/...` which is slower and can cause permission issues.
 
-**ProactorEventLoop**: If running Python tests directly on Windows (not WSL), `pytest-socket` and `aiohttp` require special handling — already done in `conftest.py` (socket enable, `ThreadedResolver`).
+**ProactorEventLoop**: If running Python tests directly on Windows (not WSL), `pytest-socket` requires special handling — already done in `conftest.py` (socket enable).
 
 ### Iterating on code changes
 
@@ -345,38 +350,35 @@ If a future HA release breaks the integration, the container tests will fail bef
 
 The table below summarizes the current coverage across ha-hemm's features. "Unit" means there are in-process HA tests; "Container" means the feature is exercised by hactl against a real HA instance; "Companion" means the companion addon is involved.
 
-| Feature area | Unit | Container | Companion |
-|---|---|---|---|
-| Config flow (hub setup) | ✓ | ✓ | — |
-| Config flow (duplicate detection) | ✓ | ✓ | — |
-| Options flow (settings) | ✓ | ✓ | — |
-| Options flow (add device) | ✓ | ✓ | — |
-| Device flow (all 7 types, beginner) | ✓ | ✓ | — |
-| Device flow (pro tier) | ✓ | — | — |
-| `safe_default` validation | ✓ | ✓ | — |
-| Integration setup/unload | ✓ | ✓ | — |
-| Integration reload | ✓ | ✓ | — |
-| Coordinator creation | ✓ | ✓ | — |
-| Sensor entity creation | ✓ | ✓ | — |
-| Per-device sensor count | — | ✓ | — |
-| Diagnostics endpoint | ✓ | ✓ | — |
-| Manifest validation (all 7 types) | — | ✓ | — |
-| Identification stubs | ✓ | — | — |
-| Repair flow framework | ✓ | — | — |
-| HA health check | — | ✓ | — |
-| Error log monitoring | — | ✓ | — |
-| Custom component visibility | — | ✓ | — |
-| Issues/repairs listing | — | ✓ | — |
-| Stress (rapid reloads) | — | ✓ | — |
-| Stress (multi-device add) | — | ✓ | — |
-| Dashboard CRUD | — | ✓ | — |
-| Config file access | — | — | ✓ |
-| Security (secrets denied) | — | — | ✓ |
-| Security (path traversal) | — | — | ✓ |
-| Template evaluation | — | — | ✓ |
-| Script listing | — | — | ✓ |
-| Automation listing | — | — | ✓ |
-| Config check (service call) | — | ✓ | ✓ |
+| Feature area | Unit | Container |
+|---|---|---|
+| Config flow (hub setup) | ✓ | ✓ |
+| Config flow (duplicate detection) | ✓ | ✓ |
+| Options flow (settings) | ✓ | ✓ |
+| Options flow (add device) | ✓ | ✓ |
+| Device flow (all 7 types, beginner) | ✓ | ✓ |
+| Device flow (pro tier) | ✓ | — |
+| `safe_default` validation | ✓ | ✓ |
+| Integration setup/unload | ✓ | ✓ |
+| Integration reload | ✓ | ✓ |
+| Coordinator creation | ✓ | ✓ |
+| Sensor entity creation | ✓ | ✓ |
+| Per-device sensor count | — | ✓ |
+| Diagnostics endpoint | ✓ | ✓ |
+| Manifest validation (all 7 types) | — | ✓ |
+| Identification stubs | ✓ | — |
+| Repair flow framework | ✓ | — |
+| HA health check | — | ✓ |
+| Error log monitoring | — | ✓ |
+| Custom component visibility | — | ✓ |
+| Issues/repairs listing | — | ✓ |
+| Stress (rapid reloads) | — | ✓ |
+| Stress (multi-device add) | — | ✓ |
+| Dashboard CRUD | — | ✓ |
+| Template evaluation (via hactl) | — | ✓ |
+| Script listing (via hactl) | — | ✓ |
+| Automation listing (via hactl) | — | ✓ |
+| Config check (service call) | — | ✓ |
 
 ---
 
@@ -413,7 +415,6 @@ Issues discovered during testing are tracked in [ISSUES_HACTL_COMPANION.md](ISSU
 - `config flow-start` hangs on integration load failure instead of failing fast
 
 **hactl-companion**:
-- Published image requires bashio shebang workaround (`command: ["python3", "-m", "companion"]`)
 - Alpine resolves `localhost` → `::1` but companion binds IPv4 only (use `127.0.0.1`)
 - `resolve=true` returns `"null\n..."` for valid YAML
 - No logging output (silent startup)

@@ -2,27 +2,35 @@
 
 from __future__ import annotations
 
+import contextlib
+import json
 import logging
 import os
 import shutil
 import stat
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.request
-from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 
 from .hactl import Hactl, get_hactl_binary_name, get_hactl_download_url
-from .hactl_client import HactlClient
 
 _LOGGER = logging.getLogger(__name__)
 
 COMPOSE_FILE = Path(__file__).parent.parent.parent / "docker-compose.test.yml"
 CONFIG_DIR = Path(__file__).parent / "config"
 BIN_DIR = Path(__file__).parent.parent.parent / ".bin"
+
+# Onboarding constants
+_CLIENT_ID = "https://hemm.test/"
+_ONBOARD_NAME = "HEMM Test"
+_ONBOARD_USER = "hemm_test"
+_ONBOARD_PASS = "hemm_test_pass_123"
+_COMPANION_TOKEN = "integration-test-token-12345"
 
 
 def pytest_collection_modifyitems(items: list) -> None:
@@ -62,12 +70,6 @@ def ha_version() -> str:
 def ha_base_url() -> str:
     """HA container base URL."""
     return os.environ.get("HA_BASE_URL", "http://localhost:8123")
-
-
-@pytest.fixture(scope="session")
-def companion_base_url() -> str:
-    """Companion container base URL."""
-    return os.environ.get("COMPANION_BASE_URL", "http://localhost:9100")
 
 
 @pytest.fixture(scope="session")
@@ -127,8 +129,12 @@ def hactl_binary() -> Path:
 
 @pytest.fixture(scope="session")
 def docker_compose_up(ha_version: str):
-    """Start HA + companion containers via docker-compose for the test session."""
-    # Skip if container is already running (e.g. manually started)
+    """Start HA container via docker-compose for the test session.
+
+    After HA is healthy, installs hemm core and the hactl-companion
+    inside the HA container, restarts HA, then starts the companion
+    as a background process.
+    """
     skip_docker = os.environ.get("SKIP_DOCKER_COMPOSE", "")
     if skip_docker:
         yield
@@ -143,67 +149,66 @@ def docker_compose_up(ha_version: str):
 
     _LOGGER.info("Starting HA container (version=%s)...", ha_version)
     subprocess.run(
-        ["docker", "compose", "-f", str(COMPOSE_FILE), "up", "-d"],
+        ["docker", "compose", "-f", str(COMPOSE_FILE), "up", "-d", "--wait"],
         env=env,
         check=True,
         capture_output=True,
         timeout=180,
     )
 
-    # Wait for HA container to be healthy (companion may fail, that's OK)
-    _LOGGER.info("Waiting for HA container to become healthy...")
+    # Install hemm core and companion inside HA container
+    _LOGGER.info("Installing hemm + companion inside container...")
+    subprocess.run(
+        ["docker", "exec", "hemm-ha-test", "pip", "install", "--quiet", "/hemm-src"],
+        capture_output=True,
+        timeout=120,
+    )
     subprocess.run(
         [
             "docker",
-            "compose",
-            "-f",
-            str(COMPOSE_FILE),
-            "up",
-            "-d",
-            "--wait",
-            "homeassistant",
+            "exec",
+            "hemm-ha-test",
+            "pip",
+            "install",
+            "--quiet",
+            "git+https://github.com/swifty99/hactl_companion.git",
         ],
-        env=env,
-        capture_output=True,
-        timeout=180,
-    )
-
-    # Install hemm package from mounted source so HA can resolve the requirement
-    _LOGGER.info("Installing hemm package inside container...")
-    subprocess.run(
-        ["docker", "exec", "hemm-ha-test", "pip", "install", "/hemm-src"],
         capture_output=True,
         timeout=120,
     )
 
     # Restart HA so it picks up the newly installed hemm package
     _LOGGER.info("Restarting HA container to load hemm...")
+    subprocess.run(["docker", "restart", "hemm-ha-test"], capture_output=True, timeout=60)
     subprocess.run(
-        ["docker", "restart", "hemm-ha-test"],
-        capture_output=True,
-        timeout=60,
-    )
-    # Wait for healthy again
-    subprocess.run(
-        [
-            "docker",
-            "compose",
-            "-f",
-            str(COMPOSE_FILE),
-            "up",
-            "-d",
-            "--wait",
-            "homeassistant",
-        ],
+        ["docker", "compose", "-f", str(COMPOSE_FILE), "up", "-d", "--wait"],
         env=env,
         capture_output=True,
         timeout=180,
     )
 
+    # Start companion as a background process inside HA
+    _LOGGER.info("Starting companion inside HA container...")
+    subprocess.run(
+        [
+            "docker",
+            "exec",
+            "-d",
+            "hemm-ha-test",
+            "sh",
+            "-c",
+            f"SUPERVISOR_TOKEN={_COMPANION_TOKEN} python3 -m companion",
+        ],
+        capture_output=True,
+        timeout=30,
+    )
+
+    # Wait for companion to be healthy
+    _wait_for_companion("http://127.0.0.1:9100", timeout=30)
+
     yield
 
     _LOGGER.info("Stopping HA container...")
-    # Remove cached token (becomes invalid after volume removal)
     token_file = BIN_DIR / ".ha_test_token"
     token_file.unlink(missing_ok=True)
     subprocess.run(
@@ -214,44 +219,172 @@ def docker_compose_up(ha_version: str):
     )
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def ha_token(docker_compose_up: None, ha_base_url: str) -> str:
+def _wait_for_companion(base_url: str, timeout: int = 30) -> None:
+    """Poll companion /v1/health until it responds."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            req = urllib.request.Request(f"{base_url}/v1/health")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                if resp.status == 200:
+                    _LOGGER.info("Companion is healthy")
+                    return
+        except Exception:
+            pass
+        time.sleep(1)
+    _LOGGER.warning("Companion did not become healthy within %ds — tests may skip", timeout)
+
+
+# --- Onboarding (stdlib urllib, no external client) ---
+
+
+def _wait_for_ha(base_url: str, timeout: float = 120.0) -> None:
+    """Poll HA until it responds."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            req = urllib.request.Request(f"{base_url}/api/")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status in (200, 401):
+                    return
+        except Exception:
+            pass
+        time.sleep(2)
+    msg = f"HA not ready at {base_url} within {timeout}s"
+    raise RuntimeError(msg)
+
+
+def _needs_onboarding(base_url: str) -> bool:
+    """Check if HA still needs onboarding."""
+    req = urllib.request.Request(f"{base_url}/api/onboarding")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        steps = json.loads(resp.read())
+        return any(s.get("step") == "user" and not s.get("done") for s in steps)
+
+
+def _complete_onboarding(base_url: str) -> str:
+    """Run headless onboarding and return a long-lived access token.
+
+    1. Create owner user → auth_code
+    2. Exchange auth_code → access_token
+    3. Complete core_config + analytics steps
+    4. Create long-lived token via WebSocket
+    """
+    # Step 1: Create owner
+    body = json.dumps(
+        {
+            "client_id": _CLIENT_ID,
+            "name": _ONBOARD_NAME,
+            "username": _ONBOARD_USER,
+            "password": _ONBOARD_PASS,
+            "language": "en",
+        }
+    ).encode()
+    req = urllib.request.Request(
+        f"{base_url}/api/onboarding/users",
+        data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    auth_code = data["auth_code"]
+    _LOGGER.info("Onboarding: owner created")
+
+    # Step 2: Exchange auth code for access token
+    form_data = (f"grant_type=authorization_code&code={auth_code}&client_id={_CLIENT_ID}").encode()
+    req = urllib.request.Request(
+        f"{base_url}/auth/token",
+        data=form_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    access_token = data["access_token"]
+    _LOGGER.info("Onboarding: auth code exchanged")
+
+    # Step 3: Complete remaining onboarding steps
+    for step in ("core_config", "analytics"):
+        req = urllib.request.Request(
+            f"{base_url}/api/onboarding/{step}",
+            data=b"{}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+        )
+        with contextlib.suppress(urllib.error.HTTPError):
+            urllib.request.urlopen(req, timeout=30)
+
+    # Step 4: Create long-lived token via WebSocket
+    import asyncio
+
+    ll_token = asyncio.get_event_loop().run_until_complete(_create_long_lived_token(base_url, access_token))
+    _LOGGER.info("Onboarding: long-lived token created")
+    return ll_token
+
+
+async def _create_long_lived_token(base_url: str, access_token: str) -> str:
+    """Create a long-lived token via the HA WebSocket API."""
+    import aiohttp
+
+    ws_url = base_url.replace("http://", "ws://").replace("https://", "wss://")
+    ws_url += "/api/websocket"
+
+    connector = aiohttp.TCPConnector(resolver=aiohttp.ThreadedResolver())
+    async with aiohttp.ClientSession(connector=connector) as session, session.ws_connect(ws_url) as ws:
+        # Read auth_required
+        msg = await ws.receive_json()
+        assert msg.get("type") == "auth_required"
+
+        # Send auth
+        await ws.send_json({"type": "auth", "access_token": access_token})
+        msg = await ws.receive_json()
+        if msg.get("type") != "auth_ok":
+            err_msg = f"WS auth failed: {msg}"
+            raise RuntimeError(err_msg)
+
+        # Request long-lived token
+        await ws.send_json(
+            {
+                "id": 1,
+                "type": "auth/long_lived_access_token",
+                "client_name": "hemm-container-test",
+                "lifespan": 365,
+            }
+        )
+        msg = await ws.receive_json()
+        if not msg.get("success"):
+            err_msg = f"Long-lived token creation failed: {msg}"
+            raise RuntimeError(err_msg)
+        return msg["result"]
+
+
+@pytest.fixture(scope="session")
+def ha_token(docker_compose_up: None, ha_base_url: str) -> str:
     """Perform onboarding and return a long-lived access token.
 
     Waits for HA to be ready, performs onboarding if needed, returns token.
-    Caches token to .ha_test_token for reuse with SKIP_DOCKER_COMPOSE.
+    Caches token to .bin/.ha_test_token for reuse with SKIP_DOCKER_COMPOSE.
     """
     token_file = BIN_DIR / ".ha_test_token"
 
-    async with HactlClient(base_url=ha_base_url) as client:
-        ready = await client.wait_for_ready(timeout=120.0)
-        assert ready, "HA container did not become ready within 120s"
+    _wait_for_ha(ha_base_url)
 
-        if await client.needs_onboarding():
-            await client.complete_onboarding()
-            _LOGGER.info("HA onboarding complete, token acquired")
-            # Cache token for reuse
-            token_file.parent.mkdir(parents=True, exist_ok=True)
-            token_file.write_text(client._token)
-        else:
-            # Already onboarded — try env, then cached token file
-            token = os.environ.get("HA_TOKEN", "")
-            if not token and token_file.exists():
-                token = token_file.read_text().strip()
-                _LOGGER.info("Using cached token from %s", token_file)
-            if not token:
-                msg = "HA is already onboarded but no HA_TOKEN provided and no cached token"
-                raise RuntimeError(msg)
-            client._token = token
+    if _needs_onboarding(ha_base_url):
+        token = _complete_onboarding(ha_base_url)
+        _LOGGER.info("HA onboarding complete, token acquired")
+        token_file.parent.mkdir(parents=True, exist_ok=True)
+        token_file.write_text(token)
+    else:
+        token = os.environ.get("HA_TOKEN", "")
+        if not token and token_file.exists():
+            token = token_file.read_text().strip()
+            _LOGGER.info("Using cached token from %s", token_file)
+        if not token:
+            msg = "HA is already onboarded but no HA_TOKEN provided and no cached token"
+            raise RuntimeError(msg)
 
-        return client._token
-
-
-@pytest_asyncio.fixture
-async def ha_client(ha_token: str, ha_base_url: str) -> AsyncGenerator[HactlClient, None]:
-    """Create a per-test authenticated hactl client."""
-    async with HactlClient(base_url=ha_base_url, token=ha_token) as client:
-        yield client
+    return token
 
 
 # --- hactl binary fixtures ---
@@ -261,24 +394,19 @@ async def ha_client(ha_token: str, ha_base_url: str) -> AsyncGenerator[HactlClie
 def hactl_dir(ha_token: str, ha_base_url: str, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Create a temporary hactl instance directory with .env pointing at the test HA.
 
-    This mimics the real hactl workflow: one directory per HA instance containing .env.
+    Includes COMPANION_URL so hactl auto-discovers the companion running inside HA.
     """
     dir_path = tmp_path_factory.mktemp("hactl_instance")
     env_file = dir_path / ".env"
-    env_file.write_text(f"HA_URL={ha_base_url}\nHA_TOKEN={ha_token}\n")
+    env_file.write_text(f"HA_URL={ha_base_url}\nHA_TOKEN={ha_token}\nCOMPANION_URL=http://127.0.0.1:9100\n")
     _LOGGER.info("Created hactl instance dir: %s", dir_path)
     return dir_path
 
 
 @pytest.fixture(scope="session")
 def hactl_session(hactl_binary: Path, hactl_dir: Path) -> Hactl:
-    """Session-scoped hactl instance — reused across tests for efficiency.
-
-    Use this for read-only operations. For tests that modify state,
-    prefer the function-scoped `hactl` fixture.
-    """
+    """Session-scoped hactl instance — reused across tests for efficiency."""
     h = Hactl(binary=hactl_binary, instance_dir=hactl_dir)
-    # Verify connectivity
     try:
         h.health()
         _LOGGER.info("hactl session connected to HA successfully")
@@ -289,8 +417,5 @@ def hactl_session(hactl_binary: Path, hactl_dir: Path) -> Hactl:
 
 @pytest.fixture
 def hactl(hactl_binary: Path, hactl_dir: Path) -> Hactl:
-    """Function-scoped hactl instance — fresh per test.
-
-    Safe for tests that modify state.
-    """
+    """Function-scoped hactl instance — fresh per test."""
     return Hactl(binary=hactl_binary, instance_dir=hactl_dir)
