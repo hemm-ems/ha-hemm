@@ -328,9 +328,13 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "last_solve_time": 0.0,
             }
 
-        from hemm.solvers.protocol import SolverStatus
+        from hemm.solvers.protocol import SolverResult, SolverStatus
 
-        result = await self.async_run_solver()
+        try:
+            result = await self.async_run_solver()
+        except Exception:
+            _LOGGER.warning("Solver failed, returning stub data", exc_info=True)
+            result = SolverResult(status=SolverStatus.ERROR)
 
         # Build device_plans for sensors
         device_plans: dict[str, dict[str, Any]] = {}
@@ -366,7 +370,10 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
 
         # Run identification (stubs for now)
-        await self.async_run_identification()
+        try:
+            await self.async_run_identification()
+        except Exception:
+            _LOGGER.debug("Identification failed, skipping", exc_info=True)
 
         return {
             "horizon_hours": self._horizon_hours,
