@@ -1,0 +1,237 @@
+name: Auto Release
+
+on:
+  schedule:
+    # 5th of each month at 10:00 UTC — after HA's monthly release
+    - cron: "0 10 5 * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override version (e.g. 2026.6). Leave empty for auto YYYY.M"
+        required: false
+        default: ""
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # ---------- Job 0: merge approved dependabot PRs ----------
+  merge-deps:
+    name: Merge Dependabot PRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Merge approved dependabot PRs
+        run: |
+          prs=$(gh pr list --author "app/dependabot" --state open --json number,mergeable --jq '.[] | select(.mergeable == "MERGEABLE") | .number')
+          if [ -z "$prs" ]; then
+            echo "No mergeable dependabot PRs found"
+            exit 0
+          fi
+          for pr in $prs; do
+            echo "Merging dependabot PR #${pr}..."
+            if gh pr merge "$pr" --squash --admin; then
+              echo "✓ PR #${pr} merged"
+            else
+              echo "⚠ PR #${pr} merge failed (non-blocking)"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull merged changes
+        run: git pull --rebase origin main
+
+  # ---------- Job 1: compute version ----------
+  versions:
+    name: Compute Version
+    needs: merge-deps
+    runs-on: ubuntu-latest
+    outputs:
+      next-tag: ${{ steps.calc.outputs.next_tag }}
+      next-version: ${{ steps.calc.outputs.next_version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Calculate next version
+        id: calc
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            ver="${{ inputs.version }}"
+          else
+            ver="$(date +%Y).$(date +%-m)"
+          fi
+          next_tag="v${ver}.0"
+          echo "next_tag=${next_tag}" >> "$GITHUB_OUTPUT"
+          echo "next_version=${ver}.0" >> "$GITHUB_OUTPUT"
+          echo "Next version: ${next_tag}"
+
+      - name: Check tag does not exist
+        run: |
+          tag="${{ steps.calc.outputs.next_tag }}"
+          if git rev-parse "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "::error::Tag ${tag} already exists — skipping auto-release"
+            exit 1
+          fi
+          echo "Tag ${tag} is available"
+
+  # ---------- Job 2: test matrix (HA versions) ----------
+  test:
+    name: Test (HA ${{ matrix.ha-version }})
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        ha-version: [stable, prev]
+        include:
+          - ha-version: stable
+            required: true
+          - ha-version: prev
+            required: true
+    continue-on-error: ${{ !matrix.required }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: |
+          uv sync --extra dev
+          uv pip install git+https://github.com/swifty99/hemm.git
+
+      - name: Lint
+        run: |
+          uv run ruff check custom_components/ tests/
+          uv run ruff format --check custom_components/ tests/
+
+      - name: Unit tests
+        run: uv run pytest --cov=custom_components/hemm --cov-report=term-missing
+
+      - name: Compute HA image tag
+        id: image
+        run: |
+          case "${{ matrix.ha-version }}" in
+            prev)
+              tag=$(date -d "$(date +%Y-%m-01) -1 month" +%Y.%-m)
+              ;;
+            *)
+              tag="${{ matrix.ha-version }}"
+              ;;
+          esac
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Start HA container
+        run: docker compose -f docker-compose.test.yml up -d --wait
+        timeout-minutes: 3
+        env:
+          HA_VERSION: ${{ steps.image.outputs.tag }}
+
+      - name: Install hemm + companion inside container
+        run: |
+          docker exec hemm-ha-test pip install --quiet git+https://github.com/swifty99/hemm.git
+          docker exec hemm-ha-test pip install --quiet git+https://github.com/swifty99/hactl_companion.git
+
+      - name: Restart HA and wait for health
+        run: |
+          docker restart hemm-ha-test
+          for i in $(seq 1 60); do
+            if curl -so /dev/null http://localhost:8123/api/onboarding 2>/dev/null; then
+              echo "HA healthy after ${i}s"
+              break
+            fi
+            sleep 2
+          done
+          curl -sf http://localhost:8123/api/onboarding || { echo "::error::HA not healthy"; exit 1; }
+        timeout-minutes: 3
+
+      - name: Start companion
+        run: |
+          docker exec -d hemm-ha-test sh -c 'SUPERVISOR_TOKEN=integration-test-token-12345 python3 -m companion'
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:9100/v1/health >/dev/null 2>&1; then
+              echo "Companion healthy after ${i}s"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Container tests
+        run: uv run pytest tests/integration/ --tb=short -v -o "addopts="
+        env:
+          SKIP_DOCKER_COMPOSE: "1"
+          HA_BASE_URL: http://localhost:8123
+
+      - name: Detect HA version
+        if: always()
+        id: detect
+        run: |
+          img="ghcr.io/home-assistant/home-assistant:${{ steps.image.outputs.tag }}"
+          ha_full=$(docker inspect "${img}" --format '{{index .Config.Labels "io.hass.version"}}' 2>/dev/null || echo "${{ steps.image.outputs.tag }}")
+          echo "ha_version=${ha_full}" >> "$GITHUB_OUTPUT"
+          echo "::notice title=HA Version::Tested against Home Assistant ${ha_full}"
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v --remove-orphans
+
+  # ---------- Job 3: check changes & release ----------
+  release:
+    name: Release
+    needs: [versions, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Check for meaningful changes since last tag
+        id: changes
+        run: |
+          latest=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$latest" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          count=$(git log "${latest}..HEAD" --oneline --no-merges \
+            --invert-grep --grep="^docs:" --grep="^ci:" --grep="^chore:" \
+            | wc -l | tr -d ' ')
+          if [ "$count" -gt 0 ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Found ${count} meaningful commits since ${latest}"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No meaningful commits since ${latest} — skipping release"
+          fi
+
+      - name: Skip release if no changes
+        if: steps.changes.outputs.has_changes == 'false'
+        run: |
+          echo "No meaningful changes — skipping release"
+          exit 0
+
+      - name: Create and push tag
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          tag="${{ needs.versions.outputs.next-tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${tag}" -m "Auto-release ${tag}"
+          git push origin "${tag}"

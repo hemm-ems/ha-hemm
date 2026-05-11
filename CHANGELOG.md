@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2026.5.0] - 2026-05-11
+
 ### Added
+
+- **Onboarding guide** (`docs/onboarding.md`): principles, two worked examples (simple + full house), quick-start, comparison table, troubleshooting
+- **README rewrite**: community-facing pitch with key differentiators
+- **CI/CD overhaul**: CodeQL security scanning, auto-release (monthly), patch-release (on demand), hardened dependabot auto-merge, SECURITY.md, HACS manifest, README badges
+- **HA-style versioning**: vYYYY.M.PATCH convention (matching HA ecosystem)
 
 - **Phase 6 — Live Optimization:**
   - 8 HA services: `replan`, `simulate`, `set_price_curve`, `set_solver`, `add_constraint_window`, `remove_constraint`, `bump_priority`, `tick` — all support `dry_run` parameter

@@ -1,0 +1,8 @@
+{
+  "name": "HEMM Energy Optimizer",
+  "hacs": "2.0.0",
+  "homeassistant": "2024.12.0",
+  "render_readme": true,
+  "zip_release": true,
+  "filename": "hemm-ha-{{ version }}.zip"
+}

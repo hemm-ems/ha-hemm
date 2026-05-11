@@ -1,6 +1,8 @@
-name: Auto-merge Dependabot
+name: Dependabot Auto-Merge
 
-on: pull_request
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -8,14 +10,23 @@ permissions:
 
 jobs:
   auto-merge:
-    if: github.actor == 'dependabot[bot]'
+    name: Auto-Merge Dependabot
     runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Fetch Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v3
+        uses: dependabot/fetch-metadata@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Block major version updates
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: |
+          echo "::warning::Major version update — requires manual review"
+          exit 0
 
       - name: Approve PR
         if: steps.metadata.outputs.update-type != 'version-update:semver-major'

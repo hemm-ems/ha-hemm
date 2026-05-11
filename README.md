@@ -1,5 +1,12 @@
 # ha-hemm — Home Assistant Integration for HEMM
 
+[![CI](https://github.com/swifty99/ha-hemm/actions/workflows/ci.yml/badge.svg)](https://github.com/swifty99/ha-hemm/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/swifty99/ha-hemm/actions/workflows/codeql.yml/badge.svg)](https://github.com/swifty99/ha-hemm/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/swifty99/ha-hemm)](https://github.com/swifty99/ha-hemm/releases/latest)
+[![License](https://img.shields.io/github/license/swifty99/ha-hemm)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+[![HACS](https://img.shields.io/badge/HACS-Custom-blue)](https://hacs.xyz/)
+
 Optimize when your home devices consume, store, and produce energy — using standard HA automations, scripts, and sensors. No proprietary UI, no cloud, no vendor lock-in.
 
 HEMM takes device manifests (what each device can do), active constraints (what you need right now), and price/solar forecasts, then produces 24-hour power plans exposed as regular HA sensors. You control actuation through your own scripts. Vendor quirks live in your automations, not in the energy manager.
