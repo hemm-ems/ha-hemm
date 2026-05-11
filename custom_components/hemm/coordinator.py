@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 from collections import deque
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_HORIZON_HOURS,
@@ -156,7 +157,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return [(p.timestamp, p.value) for p in points]
         except Exception:
             _LOGGER.warning("Price adapter '%s' failed, using flat price", self._price_adapter)
-            now = datetime.now(tz=UTC)
+            now = dt_util.utcnow()
             return [(now + timedelta(minutes=i * 15), 0.30) for i in range(self._horizon_hours * 4)]
 
     def switch_solver(self, backend: str) -> None:
@@ -207,7 +208,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return SolverResult(status=SolverStatus.OPTIMAL)
 
         manifests = build_all_manifests(devices)
-        now = datetime.now(tz=UTC)
+        now = dt_util.utcnow()
 
         # Expire old constraint windows
         expired = self.constraint_manager.expire_old(now)
@@ -230,7 +231,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if dry_run:
             entry = {
-                "timestamp": now.isoformat(),
+                "timestamp": dt_util.utcnow().isoformat(),
                 "status": result.status.value,
                 "solver": self._solver_backend,
                 "objective": result.objective_value,
@@ -251,7 +252,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._lambda_history.append(
             {
                 "iteration": self._iteration_count,
-                "timestamp": now.isoformat(),
+                "timestamp": dt_util.utcnow().isoformat(),
                 "status": result.status.value,
                 "objective": result.objective_value,
                 "solve_time": result.solve_time_seconds,
@@ -291,7 +292,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 results.append(id_result)
                 self._id_results.append(
                     {
-                        "timestamp": datetime.now(tz=UTC).isoformat(),
+                        "timestamp": dt_util.utcnow().isoformat(),
                         "device_id": device_id,
                         "device_type": device_type,
                         "updates": id_result.parameter_updates,

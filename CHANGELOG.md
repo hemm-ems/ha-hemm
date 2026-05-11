@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Phase 6 — Live Optimization:**
+  - 8 HA services: `replan`, `simulate`, `set_price_curve`, `set_solver`, `add_constraint_window`, `remove_constraint`, `bump_priority`, `tick` — all support `dry_run` parameter
+  - 5 HA events: `hemm_plan_updated`, `hemm_solver_switched`, `hemm_constraint_added`, `hemm_constraint_resolved`, `hemm_identification_complete`
+  - 7 constraint types: `reach_min_temp_once`, `hold_temp_band`, `min_soc_until`, `min_energy_until`, `forbidden_window`, `min_runtime_per_day`, `max_runtime_per_day`
+  - Sensor entities: 3 sensors per device (plan/confidence/mode)
+  - A/B solver comparison framework + `solver-decision.md` documentation
+  - 3 example automation blueprints: legionella protection, EV plugin schedule, dry-run verification
+  - Solver switching at runtime (MILP ↔ distributed) via service call
+  - Constraint lifecycle management with TTL/expiry
+  - Device identification stubs (7 device types)
+  - Extended diagnostics: constraint state, solver backend, lambda count, dry-run log
+  - Repair flow: `solver_degraded` issue when core unavailable
+
+- **Testing — 97 unit tests + container integration suite:**
+  - `test_services.py`: 52 tests covering all 8 services, all 7 constraint types, nasty type combos (zero/huge penalty, negative flex, negative prices, rapid add/remove), event firing, sensors, diagnostics, repairs, identification
+  - `test_hactl_services.py`: 22 container tests for dry-run, solver switching, price curves, constraints, onboarding E2E
+  - All datetime usage audited to `dt_util.utcnow()` (HA convention)
+  - All identifiers hemm-prefixed, events use `{DOMAIN}_` prefix
+
 ### Changed
 
 - **Architecture: companion inside HA container** — the hactl-companion now runs as a pip-installed background process inside the HA container instead of a separate Docker container. This matches the real HA addon architecture where the companion has direct filesystem access to `/config`.
