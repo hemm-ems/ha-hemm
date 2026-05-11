@@ -7,35 +7,56 @@
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 [![HACS](https://img.shields.io/badge/HACS-Custom-blue)](https://hacs.xyz/)
 
-Optimize when your home devices consume, store, and produce energy — using standard HA automations, scripts, and sensors. No proprietary UI, no cloud, no vendor lock-in.
+> **Beta.** The integration is functional and tested, but service names, sensor names, and the manifest schema may still change before 1.0. Contributions and code reviews are welcome — this is a good time to shape the design.
 
-HEMM takes device manifests (what each device can do), active constraints (what you need right now), and price/solar forecasts, then produces 24-hour power plans exposed as regular HA sensors. You control actuation through your own scripts. Vendor quirks live in your automations, not in the energy manager.
+Home Assistant integration for the [HEMM](https://github.com/swifty99/hemm) energy optimization library. HEMM reads device manifests, active constraints, and price/solar forecasts, then produces 24-hour power plans as standard HA sensors. Actuation happens through HA scripts you write; vendor quirks stay in your automations.
 
-## Key Differentiators
+## Key Design Points
 
-- **HA-native interface** — Solver outputs are `sensor.hemm_*` entities. Actuation via HA scripts. Constraints via `hemm.add_constraint_window` service calls from automations. No custom frontend.
-- **Zero vendor code in core** — Heat pump defrost, EV charger quirks, legionella cycles: all handled by HA automations using HEMM's constraint vocabulary. Vendor coverage scales with community automations, not core PRs.
-- **Tiered configuration** — Beginner: "35 m², good insulation". Pro: direct U-values, COP curves, thermal mass. Mix tiers per device.
-- **Safe defaults enforced** — Every device must have a fallback script. HEMM fails to safe, never to off.
-- **Dry-run everything** — Every service accepts `dry_run: true`. Verify before going live.
-- **Numeric conflict resolution** — Constraints have `priority_penalty` numbers. Legionella at 10.0 beats comfort at 3.0. Transparent, debuggable.
+- Solver outputs are `sensor.hemm_*` entities. Actuation is via HA scripts you write. No custom frontend.
+- Every device must declare a `safe_default` script. HEMM calls it if the coordinator crashes or times out. It is the answer to "what happens if HEMM dies at 3 AM?"
+- Every service accepts `dry_run: true`. The solver runs and fires events, but nothing is actuated.
+- Constraints carry numeric `priority_penalty` values. When two constraints compete for the same power budget, the higher number wins. The resolution is logged and inspectable.
+- Zero vendor-specific code in the HEMM core. Vendor quirks (defrost cycles, legionella prevention, utility lockout windows) belong in HA automations, not in the energy manager.
 
-## Getting Started
+## Why HEMM
 
-→ **[Onboarding Guide](docs/onboarding.md)** — Principles, two worked examples (simple 4-device setup → full 7-device house), what HA objects to create, troubleshooting.
+Rule-based energy management ("charge EV when solar > 3 kW") works for a single device. With multiple competing consumers — EV, heat pump, battery, hot water — rules produce conflicts that require manual trade-offs. HEMM replaces per-device rules with a single MILP solver that considers all devices simultaneously. Each device declares its constraints and cost function in a JSON manifest; the solver finds the globally optimal schedule and re-runs every 15 minutes.
 
-## Quick Install
+The central design decision is that the energy manager contains zero vendor-specific code. All hardware quirks stay in HA automations, where they can be shared across the community without changes to the core. A comparison with EMHASS and manual approaches is in the [onboarding guide](docs/onboarding.md#comparison-with-alternatives) (LLM-generated; not independently reviewed — treat as indicative).
 
-### HACS (recommended)
+## Onboarding
 
-1. Add this repository as a custom repository in HACS
-2. Install "HEMM Energy Optimizer"
-3. Restart Home Assistant
-4. Add the integration via Settings → Integrations → Add → HEMM
+→ **[Onboarding Guide](docs/onboarding.md)** — principles, two worked examples (4-device setup → full 7-device house), what HA objects to create, troubleshooting.
+
+## Installation
+
+### HACS (coming soon)
+
+HACS support is in progress. When available, add `https://github.com/swifty99/ha-hemm` as a custom repository in HACS, install "HEMM Energy Optimizer", restart Home Assistant, and add the integration via Settings → Integrations → Add → HEMM.
 
 ### Manual
 
-Copy `custom_components/hemm/` to your HA `config/custom_components/` directory.
+1. Download the [latest release](https://github.com/swifty99/ha-hemm/releases/latest) and unzip it.
+2. Copy the `custom_components/hemm/` directory into your HA configuration directory at `config/custom_components/hemm/`. You can do this via the [File Editor add-on](https://www.home-assistant.io/integrations/file_editor/), a Samba share, or SFTP — no SSH required.
+3. Restart Home Assistant. HA automatically installs the `hemm` Python library on first load (it is declared in the integration's `manifest.json` requirements).
+4. Add the integration via Settings → Integrations → Add → HEMM.
+
+## Testing
+
+ha-hemm uses three test layers:
+
+- **Unit tests** run in-process against `pytest-homeassistant-custom-component`. No Docker required, completes in under 30 seconds.
+- **Container tests** start a real HA instance in Docker, install the integration, and exercise it via the REST API. CI runs these on every push against three HA versions (stable, previous, beta).
+- **Pi tests** (planned) will validate performance on Raspberry Pi hardware under realistic resource constraints.
+
+See [docs/testing.md](docs/testing.md) for how to run each layer locally.
+
+## Contributing
+
+Issues, pull requests, and code reviews are welcome. The project is in early-access beta, so architectural feedback is particularly useful at this stage. Please open an issue before large changes to avoid duplicated effort.
+
+Solver logic, constraint vocabulary, and manifest schema changes belong in the [HEMM core library](https://github.com/swifty99/hemm).
 
 ## Development
 
@@ -47,20 +68,14 @@ This integration is developed alongside the HEMM core library. Both repos live u
 └── ha-hemm/    # this repo (HA custom component)
 ```
 
-### Setup
-
 ```bash
 uv venv
 uv pip install -e ".[dev]"
 uv pip install -e ../hemm  # editable install of core
 
-make test   # run unit tests
+make test   # unit tests
 make ci     # lint + test
 ```
-
-### Testing
-
-Three test layers: unit tests (< 30s), container tests (real HA in Docker), Pi hardware tests. See [docs/testing.md](docs/testing.md).
 
 ## License
 
