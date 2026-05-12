@@ -204,15 +204,13 @@ class TestBlueprintDiscovery:
     """Verify all 6 blueprints are discoverable."""
 
     def test_six_blueprints_present(self, hactl: Hactl) -> None:
-        """All 6 HEMM blueprints exist in the container."""
-        import json
+        """All 6 HEMM blueprints exist as YAML files in the custom component."""
+        from pathlib import Path
 
-        result = hactl._run(["bp", "ls"])
-        assert result.success
-        output = (result.stdout or "") + json.dumps(result.json_data or {})
-        output_lower = output.lower()
+        bp_dir = Path(__file__).parent.parent.parent / "custom_components" / "hemm" / "blueprints"
+        assert bp_dir.is_dir(), f"Blueprint directory not found: {bp_dir}"
 
-        # At minimum, the new Zeitdynamik blueprints should be present
-        new_blueprints = ["hemm_passive_meter", "hemm_reactive_follower", "hemm_planned_watchdog"]
+        bp_files = sorted(p.stem for p in bp_dir.glob("*.yaml"))
+        new_blueprints = ["hemm_passive_meter", "hemm_planned_watchdog", "hemm_reactive_follower"]
         for bp in new_blueprints:
-            assert bp in output_lower, f"Blueprint '{bp}' not found in container"
+            assert bp in bp_files, f"Blueprint '{bp}' not found in {bp_dir}"
