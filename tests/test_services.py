@@ -159,7 +159,7 @@ def hemm_core_mocks(monkeypatch: pytest.MonkeyPatch) -> _FakeConstraintManager:
     mgr = _FakeConstraintManager()
     monkeypatch.setattr(
         "custom_components.hemm.coordinator._create_constraint_manager",
-        lambda: mgr,
+        lambda _clock: mgr,
     )
 
     # Mock hemm.manifest and submodules in sys.modules

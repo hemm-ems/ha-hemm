@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_HORIZON_HOURS,
@@ -30,11 +29,13 @@ from .const import (
 )
 from .identification import IdentificationResult, get_identifier
 from .manifest_builder import build_all_manifests
+from .time import HAClock
 
 if TYPE_CHECKING:
     from hemm.constraints import ConstraintWindowManager
     from hemm.manifest.messages import ConstraintWindow, PlanMessage
     from hemm.solvers.protocol import SolverResult
+    from hemm.time import Clock
 
 # Check if hemm core solvers are available (they may not be during unit tests
 # where custom_components/hemm shadows the core hemm package)
@@ -51,11 +52,11 @@ UPDATE_INTERVAL = timedelta(minutes=15)
 MAX_HISTORY = 20
 
 
-def _create_constraint_manager() -> ConstraintWindowManager:
+def _create_constraint_manager(clock: Clock) -> ConstraintWindowManager:
     """Create a ConstraintWindowManager (deferred import)."""
     import hemm.constraints
 
-    return hemm.constraints.ConstraintWindowManager()
+    return hemm.constraints.ConstraintWindowManager(clock=clock)
 
 
 class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -63,7 +64,13 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     config_entry: ConfigEntry
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        *,
+        clock: Clock | None = None,
+    ) -> None:
         """Initialize the coordinator."""
         super().__init__(
             hass,
@@ -72,6 +79,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=UPDATE_INTERVAL,
             config_entry=entry,
         )
+        self._clock: Clock = clock if clock is not None else HAClock()
         self._horizon_hours: int = entry.options.get(
             CONF_HORIZON_HOURS,
             entry.data.get(CONF_HORIZON_HOURS, DEFAULT_HORIZON_HOURS),
@@ -117,8 +125,13 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def constraint_manager(self) -> ConstraintWindowManager:
         """Return the constraint window manager."""
         if self._constraint_manager is None:
-            self._constraint_manager = _create_constraint_manager()
+            self._constraint_manager = _create_constraint_manager(self._clock)
         return self._constraint_manager
+
+    @property
+    def clock(self) -> Clock:
+        """Return the clock used for all time reads in this coordinator."""
+        return self._clock
 
     @property
     def last_result(self) -> SolverResult | None:
@@ -140,11 +153,11 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._solver_backend == "distributed":
             from hemm.solvers.distributed import DistributedSolver
 
-            return DistributedSolver(max_iterations=self._max_iterations)
+            return DistributedSolver(max_iterations=self._max_iterations, clock=self._clock)
 
         from hemm.solvers.milp_central import MILPCentralSolver
 
-        return MILPCentralSolver()
+        return MILPCentralSolver(clock=self._clock)
 
     def _get_price_forecast(self) -> list[tuple[datetime, float]]:
         """Fetch price forecast from the configured adapter."""
@@ -157,7 +170,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return [(p.timestamp, p.value) for p in points]
         except Exception:
             _LOGGER.warning("Price adapter '%s' failed, using flat price", self._price_adapter)
-            now = dt_util.utcnow()
+            now = self._clock.now()
             return [(now + timedelta(minutes=i * 15), 0.30) for i in range(self._horizon_hours * 4)]
 
     def switch_solver(self, backend: str) -> None:
@@ -221,7 +234,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return SolverResult(status=SolverStatus.OPTIMAL)
             manifests = filtered_manifests
 
-        now = dt_util.utcnow()
+        now = self._clock.now()
 
         # Expire old constraint windows
         expired = self.constraint_manager.expire_old(now)
@@ -244,7 +257,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if dry_run:
             entry = {
-                "timestamp": dt_util.utcnow().isoformat(),
+                "timestamp": self._clock.now().isoformat(),
                 "status": result.status.value,
                 "solver": self._solver_backend,
                 "objective": result.objective_value,
@@ -265,7 +278,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._lambda_history.append(
             {
                 "iteration": self._iteration_count,
-                "timestamp": dt_util.utcnow().isoformat(),
+                "timestamp": self._clock.now().isoformat(),
                 "status": result.status.value,
                 "objective": result.objective_value,
                 "solve_time": result.solve_time_seconds,
@@ -305,7 +318,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 results.append(id_result)
                 self._id_results.append(
                     {
-                        "timestamp": dt_util.utcnow().isoformat(),
+                        "timestamp": self._clock.now().isoformat(),
                         "device_id": device_id,
                         "device_type": device_type,
                         "updates": id_result.parameter_updates,

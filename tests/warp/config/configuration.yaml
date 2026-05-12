@@ -1,0 +1,98 @@
+# HEMM time-warp HA configuration.
+#
+# Minimum viable simulated home: a handful of synthetic sensors driven by
+# `now()`. Under libwarp at speed N, `now()` advances N× faster than wall —
+# so these sensors traverse a day of values in ~(24*3600/N)/60 wall-minutes.
+#
+# Why HA-native (template sensors) instead of an external simulator? Zero
+# additional moving parts. The sensors read virtual `now()` directly and HA
+# re-evaluates them on every state read or trigger fire. Closed-loop physics
+# (battery SoC etc. reacting to plans) is left to a future external simulator.
+
+default_config:
+
+# Keep recorder small — at x100, history rows pile up fast.
+recorder:
+  purge_keep_days: 1
+  commit_interval: 30
+
+logger:
+  default: warning
+  logs:
+    custom_components.hemm: info
+
+# --- Stateful sim variables (mutated by automations) ---
+input_number:
+  warp_battery_soc_pct:
+    name: Warp Battery SoC
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    unit_of_measurement: "%"
+
+  warp_indoor_temp_c:
+    name: Warp Indoor Temperature
+    min: 5
+    max: 30
+    step: 0.1
+    initial: 20
+    unit_of_measurement: "°C"
+
+# --- Pure-function sensors derived from virtual `now()` ---
+template:
+  - sensor:
+      # Outdoor temperature: cosine peak at 15:00 UTC, range 2..14 °C.
+      - name: "Warp Outdoor Temp"
+        unique_id: warp_outdoor_temp
+        unit_of_measurement: "°C"
+        state: >-
+          {% set h = now().hour + now().minute / 60.0 %}
+          {% set angle = 2 * 3.14159 * (h - 15) / 24 %}
+          {{ (8 + 6 * angle | cos) | round(2) }}
+
+      # PV power: bell curve peaking at 12:00, max ~7 kW.
+      - name: "Warp PV Power"
+        unique_id: warp_pv_power
+        unit_of_measurement: "kW"
+        state: >-
+          {% set h = now().hour + now().minute / 60.0 %}
+          {% set bell = (-0.5 * ((h - 12) / 3) ** 2) | float %}
+          {{ (7 * 2.71828 ** bell) | round(3) }}
+
+      # Dynamic tariff price: cheap at night, two peaks (morning + evening).
+      - name: "Warp Price"
+        unique_id: warp_price
+        unit_of_measurement: "EUR/kWh"
+        state: >-
+          {% set h = now().hour + now().minute / 60.0 %}
+          {% set morning = 0.6 * 2.71828 ** (-0.5 * ((h - 8) / 1.5) ** 2) %}
+          {% set evening = 0.8 * 2.71828 ** (-0.5 * ((h - 18) / 2) ** 2) %}
+          {% set solar_dip = -0.4 * 2.71828 ** (-0.5 * ((h - 13) / 2) ** 2) %}
+          {% set factor = 1.0 + morning + evening + solar_dip %}
+          {{ (0.20 + 0.25 * [[(factor - 0.5) / 1.5, 1] | min, 0] | max) | round(4) }}
+
+      # Surface the input_numbers as proper sensors for HEMM consumption.
+      - name: "Warp Battery SoC"
+        unique_id: warp_battery_soc
+        unit_of_measurement: "%"
+        state: "{{ states('input_number.warp_battery_soc_pct') }}"
+
+      - name: "Warp Indoor Temp"
+        unique_id: warp_indoor_temp
+        unit_of_measurement: "°C"
+        state: "{{ states('input_number.warp_indoor_temp_c') }}"
+
+# Every-minute heartbeat — written to the persistent_notification stream so
+# we can see it in `docker logs`. At warp speed N, one log line per N⁻¹ wall-seconds.
+automation:
+  - alias: "Warp heartbeat"
+    mode: parallel
+    trigger:
+      - platform: time_pattern
+        minutes: "*"
+    action:
+      - service: system_log.write
+        data:
+          message: "warp-heartbeat tick"
+          level: warning

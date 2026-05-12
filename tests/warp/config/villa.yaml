@@ -1,0 +1,268 @@
+# Villa stress configuration — 7-device simulated home
+#
+# Mirrors the HEMM "full_house" scenario: battery, heat pump, EV charger,
+# water heater, PV, living room, bathroom heater. Each device has its own
+# template sensor + automation (some fire every 30s virtual, some every minute).
+# The goal is to max-load the HA scheduler under warp to find the ceiling.
+
+default_config:
+
+recorder:
+  purge_keep_days: 1
+  commit_interval: 15
+
+logger:
+  default: warning
+  logs:
+    custom_components.hemm: info
+
+# --- Stateful sim variables ---
+input_number:
+  villa_battery_soc_pct:
+    name: Villa Battery SoC
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    unit_of_measurement: "%"
+
+  villa_indoor_temp_c:
+    name: Villa Indoor Temperature
+    min: 5
+    max: 30
+    step: 0.1
+    initial: 20
+    unit_of_measurement: "°C"
+
+  villa_dhw_temp_c:
+    name: Villa DHW Temperature
+    min: 10
+    max: 70
+    step: 0.1
+    initial: 45
+    unit_of_measurement: "°C"
+
+  villa_ev_soc_pct:
+    name: Villa EV SoC
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 30
+    unit_of_measurement: "%"
+
+  villa_hp_power_kw:
+    name: Villa HP Power
+    min: 0
+    max: 5
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "kW"
+
+# --- Template sensors (7 devices + derived) ---
+template:
+  - sensor:
+      # 1. Outdoor temperature: cosine peak at 15:00 UTC, range 0..10 °C
+      - name: "Villa Outdoor Temp"
+        unique_id: villa_outdoor_temp
+        unit_of_measurement: "°C"
+        state: >-
+          {% set h = now().hour + now().minute / 60.0 %}
+          {% set angle = 2 * 3.14159 * (h - 15) / 24 %}
+          {{ (5 + 5 * angle | cos) | round(2) }}
+
+      # 2. PV power: bell curve peaking at 12:00, max ~9.8 kW
+      - name: "Villa PV Power"
+        unique_id: villa_pv_power
+        unit_of_measurement: "kW"
+        state: >-
+          {% set h = now().hour + now().minute / 60.0 %}
+          {% set bell = (-0.5 * ((h - 12) / 3) ** 2) | float %}
+          {{ (9.8 * 2.71828 ** bell) | round(3) }}
+
+      # 3. Dynamic tariff: dual-peak morning+evening
+      - name: "Villa Price"
+        unique_id: villa_price
+        unit_of_measurement: "EUR/kWh"
+        state: >-
+          {% set h = now().hour + now().minute / 60.0 %}
+          {% set morning = 0.6 * 2.71828 ** (-0.5 * ((h - 8) / 1.5) ** 2) %}
+          {% set evening = 0.8 * 2.71828 ** (-0.5 * ((h - 18) / 2) ** 2) %}
+          {% set solar_dip = -0.4 * 2.71828 ** (-0.5 * ((h - 13) / 2) ** 2) %}
+          {% set factor = 1.0 + morning + evening + solar_dip %}
+          {{ (0.32 + 0.16 * [[(factor - 0.5) / 1.5, 1] | min, 0] | max) | round(4) }}
+
+      # 4. Battery SoC sensor (from input_number)
+      - name: "Villa Battery SoC"
+        unique_id: villa_battery_soc
+        unit_of_measurement: "%"
+        state: "{{ states('input_number.villa_battery_soc_pct') }}"
+
+      # 5. Indoor temp sensor
+      - name: "Villa Indoor Temp"
+        unique_id: villa_indoor_temp
+        unit_of_measurement: "°C"
+        state: "{{ states('input_number.villa_indoor_temp_c') }}"
+
+      # 6. DHW temp sensor
+      - name: "Villa DHW Temp"
+        unique_id: villa_dhw_temp
+        unit_of_measurement: "°C"
+        state: "{{ states('input_number.villa_dhw_temp_c') }}"
+
+      # 7. EV SoC sensor
+      - name: "Villa EV SoC"
+        unique_id: villa_ev_soc
+        unit_of_measurement: "%"
+        state: "{{ states('input_number.villa_ev_soc_pct') }}"
+
+      # 8. Heat pump COP (function of outdoor temp)
+      - name: "Villa HP COP"
+        unique_id: villa_hp_cop
+        state: >-
+          {% set outdoor = states('sensor.villa_outdoor_temp') | float(5) %}
+          {{ (2.0 + 0.3 * outdoor) | round(2) }}
+
+      # 9. Heat pump power
+      - name: "Villa HP Power"
+        unique_id: villa_hp_power
+        unit_of_measurement: "kW"
+        state: "{{ states('input_number.villa_hp_power_kw') }}"
+
+      # 10. Grid import (PV - consumption)
+      - name: "Villa Grid Import"
+        unique_id: villa_grid_import
+        unit_of_measurement: "kW"
+        state: >-
+          {% set pv = states('sensor.villa_pv_power') | float(0) %}
+          {% set hp = states('sensor.villa_hp_power') | float(0) %}
+          {% set base = 0.8 %}
+          {{ (hp + base - pv) | round(3) }}
+
+      # 11. Net cost rate
+      - name: "Villa Cost Rate"
+        unique_id: villa_cost_rate
+        unit_of_measurement: "EUR/h"
+        state: >-
+          {% set grid = states('sensor.villa_grid_import') | float(0) %}
+          {% set price = states('sensor.villa_price') | float(0.30) %}
+          {{ (grid * price) | round(4) }}
+
+      # 12. Wind speed (sinusoidal, peaks at night)
+      - name: "Villa Wind Speed"
+        unique_id: villa_wind_speed
+        unit_of_measurement: "m/s"
+        state: >-
+          {% set h = now().hour + now().minute / 60.0 %}
+          {% set angle = 2 * 3.14159 * (h - 3) / 24 %}
+          {{ (4 + 3 * angle | cos) | round(1) }}
+
+      # 13. Humidity (inverse of temp)
+      - name: "Villa Humidity"
+        unique_id: villa_humidity
+        unit_of_measurement: "%"
+        state: >-
+          {% set temp = states('sensor.villa_outdoor_temp') | float(5) %}
+          {{ (85 - 2 * temp) | round(1) }}
+
+      # 14. Solar irradiance (companion to PV)
+      - name: "Villa Irradiance"
+        unique_id: villa_irradiance
+        unit_of_measurement: "W/m²"
+        state: >-
+          {% set h = now().hour + now().minute / 60.0 %}
+          {% set bell = (-0.5 * ((h - 12) / 3) ** 2) | float %}
+          {{ (1000 * 2.71828 ** bell) | round(0) }}
+
+# --- Automations: fire at different intervals to stress the scheduler ---
+automation:
+  # Heartbeat: every virtual minute
+  - alias: "Villa heartbeat"
+    mode: parallel
+    trigger:
+      - platform: time_pattern
+        minutes: "*"
+    action:
+      - service: system_log.write
+        data:
+          message: "villa-heartbeat tick"
+          level: warning
+
+  # Battery sim: charge/discharge based on PV vs consumption, every 30s
+  - alias: "Villa battery sim"
+    mode: single
+    trigger:
+      - platform: time_pattern
+        seconds: "/30"
+    action:
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.villa_battery_soc_pct
+        data:
+          value: >-
+            {% set soc = states('input_number.villa_battery_soc_pct') | float(50) %}
+            {% set pv = states('sensor.villa_pv_power') | float(0) %}
+            {% set hp = states('sensor.villa_hp_power') | float(0) %}
+            {% set net = pv - hp - 0.8 %}
+            {% set delta = net * 0.5 / 60 * 100 / 10 %}
+            {{ [[soc + delta, 100] | min, 0] | max | round(1) }}
+
+  # DHW sim: slow heat loss + random heating bursts
+  - alias: "Villa DHW sim"
+    mode: single
+    trigger:
+      - platform: time_pattern
+        minutes: "/5"
+    action:
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.villa_dhw_temp_c
+        data:
+          value: >-
+            {% set t = states('input_number.villa_dhw_temp_c') | float(45) %}
+            {% set h = now().hour %}
+            {% if h >= 2 and h < 4 %}
+              {{ [[t + 1.5, 65] | min, 10] | max | round(1) }}
+            {% else %}
+              {{ [[t - 0.3, 65] | min, 10] | max | round(1) }}
+            {% endif %}
+
+  # Indoor temp sim: heat pump effect + outdoor coupling
+  - alias: "Villa indoor temp sim"
+    mode: single
+    trigger:
+      - platform: time_pattern
+        minutes: "/2"
+    action:
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.villa_indoor_temp_c
+        data:
+          value: >-
+            {% set t_in = states('input_number.villa_indoor_temp_c') | float(20) %}
+            {% set t_out = states('sensor.villa_outdoor_temp') | float(5) %}
+            {% set hp = states('sensor.villa_hp_power') | float(0) %}
+            {% set loss = (t_in - t_out) * 0.01 %}
+            {% set gain = hp * 0.1 %}
+            {{ [[t_in - loss + gain, 28] | min, 8] | max | round(1) }}
+
+  # EV charge sim: plugged in 18:00-07:00, 11 kW max
+  - alias: "Villa EV charge sim"
+    mode: single
+    trigger:
+      - platform: time_pattern
+        minutes: "/3"
+    action:
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.villa_ev_soc_pct
+        data:
+          value: >-
+            {% set soc = states('input_number.villa_ev_soc_pct') | float(30) %}
+            {% set h = now().hour %}
+            {% if h >= 18 or h < 7 %}
+              {{ [[soc + 0.7, 100] | min, 0] | max | round(1) }}
+            {% elif h >= 7 and h < 8 %}
+              {{ [[soc - 5, 100] | min, 0] | max | round(1) }}
+            {% else %}
+              {{ soc | round(1) }}
+            {% endif %}

@@ -63,7 +63,8 @@ markers = [
     "pi: Tests that run on Raspberry Pi hardware only",
     "slow: Long-running simulation tests",
     "sim: Sim house tests (Docker + full HA provisioning per house)",
+    "warp: Time-warp Docker tests (requires libwarp container)",
 ]
-addopts = "-m 'not container and not pi and not slow and not sim' --strict-markers"
+addopts = "-m 'not container and not pi and not slow and not sim and not warp' --strict-markers"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

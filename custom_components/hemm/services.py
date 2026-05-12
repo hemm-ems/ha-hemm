@@ -8,7 +8,6 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
-from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTR_DRY_RUN,
@@ -207,7 +206,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
             flex_cost_per_hour_early=call.data.get("flex_cost_per_hour_early", 0.0),
             priority_penalty=call.data.get("priority_penalty", 1.0),
             ttl_seconds=call.data.get("ttl_seconds"),
-            created_at=dt_util.utcnow(),
+            created_at=coordinator.clock.now(),
         )
 
         _LOGGER.info(

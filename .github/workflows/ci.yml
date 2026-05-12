@@ -185,3 +185,60 @@ jobs:
       - name: Teardown
         if: always()
         run: docker compose -f docker-compose.test.yml down -v --remove-orphans
+
+  warp-test:
+    name: Warp Smoke Tests (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [auto, fixed]
+        include:
+          - mode: auto
+            warp_speed: ""
+          - mode: fixed
+            warp_speed: "100"
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Build warp image
+        run: docker compose -f docker-compose.warp.yml build
+
+      - name: Start warp container
+        run: docker compose -f docker-compose.warp.yml up -d --wait
+        timeout-minutes: 5
+        env:
+          WARP_SPEED: ${{ matrix.warp_speed }}
+
+      - name: Wait for PI ramp (auto mode)
+        if: matrix.mode == 'auto'
+        run: sleep 15
+
+      - name: Run warp smoke tests
+        run: uv run pytest tests/warp/test_warp_smoke.py -v --tb=short -m warp -o "addopts="
+        env:
+          WARP_SPEED: ${{ matrix.warp_speed }}
+
+      - name: Collect warp logs on failure
+        if: failure()
+        run: docker logs hemm-ha-warp 2>&1 | tail -50
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.warp.yml down -v --remove-orphans

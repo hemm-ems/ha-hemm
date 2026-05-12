@@ -1,4 +1,5 @@
-.PHONY: test test-container test-pi test-slow ci ci-full lint format install-hactl docker-up docker-down docker-reset sim-up sim-setup sim-down sim-all sim-status sim-test
+.PHONY: test test-container test-pi test-slow ci ci-full lint format install-hactl docker-up docker-down docker-reset sim-up sim-setup sim-down sim-all sim-status sim-test check-clock \
+	warp-up warp-down warp-build warp-logs warp-shell warp-set-speed warp-date warp-clock test-warp test-warp-stress
 
 ## Default: fast unit tests only
 test:
@@ -23,8 +24,15 @@ test-pi:
 test-slow:
 	uv run pytest -m slow
 
-## CI minimum: lint + unit tests
-ci: lint test
+## CI minimum: lint + clock audit + unit tests
+ci: lint check-clock test
+
+## Time-warp audit: forbid direct `dt_util.utcnow`/`datetime.now`/`time.monotonic`
+## in the integration. Whitelist: custom_components/hemm/time.py (HAClock).
+check-clock:
+	uv run python ../hemm/tools/check_clock.py \
+		--root custom_components/hemm \
+		--allow custom_components/hemm/time.py
 
 ## CI full: ci + container tests
 ci-full: ci test-container
@@ -177,6 +185,93 @@ sim-status:
 sim-test: install-hactl
 	@echo "Running sim house tests..."
 	uv run pytest tests/sim/ -m sim --tb=short -q --log-cli-level=INFO
+
+## --- Time-warp Stack (libwarp LD_PRELOAD in Docker) ---
+
+## Build the warp image (HA + libwarp).
+warp-build:
+	docker compose -f docker-compose.warp.yml build
+
+## Bring up the warp stack. Override speed with `WARP_SPEED=500 make warp-up`.
+## Omit WARP_SPEED for auto mode (PI controller adjusts speed to target CPU).
+## NOTE: HEMM core is NOT auto-installed in the warp container — pip's runtime
+## use of pthread_cond_timedwait with absolute deadlines doesn't survive the
+## virtualized CLOCK_MONOTONIC (waits get stretched proportional to uptime).
+## Use the `tests/integration/` stack (docker-compose.test.yml) for full HEMM
+## integration tests; the warp stack is for clock/scheduler behavior only.
+warp-up: warp-build
+	docker compose -f docker-compose.warp.yml up -d
+	@echo "Waiting for HA (warp) to be healthy..."
+ifeq ($(OS),Windows_NT)
+	@powershell -Command "do { Start-Sleep -Milliseconds 2000; $$s = docker inspect --format '{{.State.Health.Status}}' hemm-ha-warp 2>$$null } while ($$s -ne 'healthy'); Write-Host 'HA (warp) healthy'"
+else
+	@while [ "$$(docker inspect --format '{{.State.Health.Status}}' hemm-ha-warp 2>/dev/null)" != "healthy" ]; do sleep 2; done; echo "HA (warp) healthy"
+endif
+	@echo "Warp stack ready. Wall vs simulated:"
+	@$(MAKE) warp-clock
+
+## Tear down warp stack and volumes.
+warp-down:
+	docker compose -f docker-compose.warp.yml down -v --remove-orphans
+
+## Tail HA logs (warp).
+warp-logs:
+	docker logs hemm-ha-warp --tail 30 -f
+
+## Open a shell in the warp container.
+warp-shell:
+	docker exec -it hemm-ha-warp sh
+
+## Print the current simulated `date` inside the container next to wall-clock.
+warp-date:
+ifeq ($(OS),Windows_NT)
+	@powershell -Command "Write-Host ('wall:      ' + (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'))"
+	@powershell -Command "Write-Host ('container: ' + (docker exec hemm-ha-warp date -u '+%%Y-%%m-%%d %%H:%%M:%%S' 2>$$null).Trim())"
+else
+	@echo "wall:      $$(date -u +'%Y-%m-%d %H:%M:%S')"
+	@echo "container: $$(docker exec hemm-ha-warp date -u +'%Y-%m-%d %H:%M:%S')"
+endif
+
+## Print a multi-sample wall vs simulated clock comparison.
+warp-clock:
+ifeq ($(OS),Windows_NT)
+	@powershell -Command "[Threading.Thread]::CurrentThread.CurrentCulture = 'en-US'; 1..5 | ForEach-Object { $$w = [int64][double](Get-Date -UFormat '%%s'); $$c = (docker exec hemm-ha-warp date -u +%%s 2>$$null).Trim(); Write-Host \"wall=$$w  container=$$c  delta=$$([int64]$$c - $$w)s\"; Start-Sleep -Seconds 1 }"
+else
+	@for i in 1 2 3 4 5; do \
+	  W=$$(date -u +%s); \
+	  C=$$(docker exec hemm-ha-warp date -u +%s); \
+	  echo "wall=$$W  container=$$C  delta=$$((C - W))s"; \
+	  sleep 1; \
+	done
+endif
+
+## Change the warp speed. Requires a stack restart since WARP_SPEED is read once at process start.
+## Usage: make warp-set-speed SPEED=500
+warp-set-speed:
+ifeq ($(OS),Windows_NT)
+	@if "$(SPEED)"=="" (echo Usage: make warp-set-speed SPEED=500 && exit /b 2)
+else
+	@[ -n "$(SPEED)" ] || (echo "Usage: make warp-set-speed SPEED=500" && exit 2)
+endif
+	@$(MAKE) warp-down >/dev/null
+	@WARP_SPEED=$(SPEED) $(MAKE) warp-up
+
+## Run the warp CI gate (smoke test that time advances at configured speed).
+test-warp: warp-up
+ifeq ($(OS),Windows_NT)
+	@powershell -Command "uv run pytest -m warp --tb=short -q; $$rc=$$LASTEXITCODE; $(MAKE) warp-down; exit $$rc"
+else
+	uv run pytest -m warp --tb=short -q ; rc=$$? ; $(MAKE) warp-down ; exit $$rc
+endif
+
+## Run warp stress tests with villa config (local only, ~2 min).
+test-warp-stress:
+	@WARP_CONFIG=villa.yaml $(MAKE) warp-up
+ifeq ($(OS),Windows_NT)
+	@powershell -Command "uv run pytest tests/warp/test_warp_stress.py -v -s --tb=short -m warp -o 'addopts='; $$rc=$$LASTEXITCODE; $(MAKE) warp-down; exit $$rc"
+else
+	uv run pytest tests/warp/test_warp_stress.py -v -s --tb=short -m warp -o 'addopts=' ; rc=$$? ; $(MAKE) warp-down ; exit $$rc
+endif
 
 ## Build (HACS compatible zip)
 build:
