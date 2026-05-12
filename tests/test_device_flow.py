@@ -9,6 +9,7 @@ from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.hemm.const import (
     CONF_CAPACITY_KWH,
+    CONF_CONTROL_CLASS,
     CONF_DEVICE_NAME,
     CONF_DEVICE_TYPE,
     CONF_FLOOR_AREA_M2,
@@ -22,6 +23,7 @@ from custom_components.hemm.const import (
     CONF_TIER,
     CONF_VOLUME_LITERS,
     ConfigTier,
+    ControlClassHA,
     DeviceType,
 )
 
@@ -294,6 +296,31 @@ async def test_heat_pump_pro_mode(hass: HomeAssistant, init_integration: ConfigE
     assert devices[0]["vendor_model"] == "Daikin Altherma 3"
     assert devices[0]["defrost_lockout_minutes"] == 10.0
     assert devices[0][CONF_TIER] == ConfigTier.PRO
+
+
+@pytest.mark.unit
+async def test_device_configure_includes_control_class(hass: HomeAssistant, init_integration: ConfigEntry) -> None:
+    """Test that control_class field is available and stored in device config."""
+    result = await hass.config_entries.options.async_init(init_integration.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input={"action": "add_device"})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={CONF_DEVICE_TYPE: DeviceType.BATTERY, CONF_TIER: ConfigTier.BEGINNER},
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_DEVICE_NAME: "Battery with Class",
+            CONF_CAPACITY_KWH: 10.0,
+            CONF_MAX_CHARGE_KW: 5.0,
+            CONF_MAX_DISCHARGE_KW: 5.0,
+            CONF_SAFE_DEFAULT_SCRIPT: "script.battery_safe",
+            CONF_CONTROL_CLASS: ControlClassHA.REACTIVE,
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    devices = init_integration.data.get("devices", [])
+    assert devices[0][CONF_CONTROL_CLASS] == ControlClassHA.REACTIVE
 
 
 @pytest.mark.unit

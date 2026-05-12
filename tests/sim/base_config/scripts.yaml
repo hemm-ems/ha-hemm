@@ -1,0 +1,168 @@
+# Safe-default and action scripts for all sim house device types.
+# These are no-ops — real actuator behavior is out of scope for sim.
+# Each device in the config flow requires a safe_default_script entity to exist.
+
+# --- Battery scripts ---
+hemm_battery_safe:
+  alias: "Battery Safe Default"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+battery_charge:
+  alias: "Battery Charge"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+battery_discharge:
+  alias: "Battery Discharge"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+battery_idle:
+  alias: "Battery Idle"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+# --- EV Charger scripts ---
+hemm_ev_safe:
+  alias: "EV Safe Default"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+ev_start_charging:
+  alias: "EV Start Charging"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+ev_stop_charging:
+  alias: "EV Stop Charging"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+# --- Heat Pump scripts ---
+hemm_hp_safe:
+  alias: "Heat Pump Safe Default"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+hp_heat_mode:
+  alias: "Heat Pump Heat Mode"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+hp_idle:
+  alias: "Heat Pump Idle"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+# --- Water Heater scripts ---
+hemm_wh_safe:
+  alias: "Water Heater Safe Default"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+dhw_force_high_temp:
+  alias: "DHW Force High Temp"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+dhw_set_normal:
+  alias: "DHW Set Normal"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+dhw_off:
+  alias: "DHW Off"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+# --- Pool (WaterHeater variant) scripts ---
+hemm_pool_safe:
+  alias: "Pool Safe Default"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+pool_heat:
+  alias: "Pool Heat"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+pool_off:
+  alias: "Pool Off"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+# --- Room scripts ---
+hemm_room_safe:
+  alias: "Room Safe Default"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+living_room_heat_on:
+  alias: "Living Room Heat On"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+living_room_heat_off:
+  alias: "Living Room Heat Off"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+# --- Thermostat Load scripts ---
+hemm_thermostat_safe:
+  alias: "Thermostat Safe Default"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+bathroom_heater_allow:
+  alias: "Bathroom Heater Allow"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+bathroom_heater_block:
+  alias: "Bathroom Heater Block"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+# --- PV Forecast scripts ---
+hemm_pv_safe:
+  alias: "PV Safe Default"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+# --- Passive device scripts ---
+hemm_passive_safe:
+  alias: "Passive Safe Default"
+  sequence:
+    - delay: "00:00:01"
+  mode: single
+
+kitchen_noop:
+  alias: "Kitchen No-Op"
+  sequence:
+    - delay: "00:00:01"
+  mode: single

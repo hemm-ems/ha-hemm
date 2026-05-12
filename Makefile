@@ -1,4 +1,4 @@
-.PHONY: test test-container test-pi test-slow ci ci-full lint format install-hactl docker-up docker-down docker-reset
+.PHONY: test test-container test-pi test-slow ci ci-full lint format install-hactl docker-up docker-down docker-reset sim-up sim-setup sim-down sim-all sim-status sim-test
 
 ## Default: fast unit tests only
 test:
@@ -108,6 +108,75 @@ else
 	@chmod +x .bin/hactl
 	@echo "hactl installed to .bin/hactl"
 endif
+
+## --- Sim House Management ---
+## Usage: make sim-up HOUSE=starter
+##        make sim-all HOUSE=starter
+##        make sim-test   (runs all houses sequentially via pytest)
+
+HOUSE ?= starter
+SIM_COMPOSE = tests/sim/docker-compose.sim.yml
+
+# Map house names to ports
+_sim_port_starter = 8130
+_sim_port_family  = 8131
+_sim_port_comfort = 8132
+_sim_port_villa   = 8133
+_sim_port_para14a = 8134
+
+SIM_PORT = $(_sim_port_$(HOUSE))
+SIM_CONTAINER = hemm-sim-$(HOUSE)
+
+## Start a sim house container
+sim-up:
+	@echo "Starting sim house: $(HOUSE) (port $(SIM_PORT))..."
+	HOUSE_NAME=$(HOUSE) HOUSE_PORT=$(SIM_PORT) docker compose -f $(SIM_COMPOSE) up -d --wait
+	@echo "Waiting for HA to be healthy..."
+ifeq ($(OS),Windows_NT)
+	@powershell -Command "do { Start-Sleep -Milliseconds 2000; $$s = docker inspect --format '{{.State.Health.Status}}' $(SIM_CONTAINER) 2>$$null } while ($$s -ne 'healthy'); Write-Host 'HA healthy'"
+else
+	@while [ "$$(docker inspect --format '{{.State.Health.Status}}' $(SIM_CONTAINER) 2>/dev/null)" != "healthy" ]; do sleep 2; done; echo "HA healthy"
+endif
+	@echo "Installing hemm package in $(SIM_CONTAINER)..."
+	docker exec $(SIM_CONTAINER) pip install --quiet /hemm-src 2>&1 | tail -1
+	@echo "Restarting HA to load hemm..."
+	docker restart $(SIM_CONTAINER)
+ifeq ($(OS),Windows_NT)
+	@powershell -Command "do { Start-Sleep -Milliseconds 2000; $$s = docker inspect --format '{{.State.Health.Status}}' $(SIM_CONTAINER) 2>$$null } while ($$s -ne 'healthy'); Write-Host 'HA ready with hemm'"
+else
+	@while [ "$$(docker inspect --format '{{.State.Health.Status}}' $(SIM_CONTAINER) 2>/dev/null)" != "healthy" ]; do sleep 2; done; echo "HA ready with hemm"
+endif
+	@echo "Sim house $(HOUSE) ready at http://localhost:$(SIM_PORT)"
+
+## Setup a sim house (onboard + provision devices) — container must be running
+sim-setup: install-hactl
+	@echo "Setting up sim house: $(HOUSE)..."
+	uv run python -c "from tests.sim.runner import full_setup, HouseConfig; from pathlib import Path; h = HouseConfig.from_yaml(Path('tests/sim/houses/$(HOUSE)/house.yaml')); full_setup(h, 'http://localhost:$(SIM_PORT)', Path('.bin/hactl') if not '$(OS)' == 'Windows_NT' else Path('.bin/hactl.exe'), Path('.bin'))"
+	@echo "Sim house $(HOUSE) setup complete!"
+
+## Stop and remove a sim house container
+sim-down:
+	@echo "Stopping sim house: $(HOUSE)..."
+	HOUSE_NAME=$(HOUSE) HOUSE_PORT=$(SIM_PORT) docker compose -f $(SIM_COMPOSE) down -v --remove-orphans
+ifeq ($(OS),Windows_NT)
+	@if exist .bin\.ha_sim_token_$(HOUSE) del .bin\.ha_sim_token_$(HOUSE)
+else
+	@rm -f .bin/.ha_sim_token_$(HOUSE)
+endif
+	@echo "Sim house $(HOUSE) stopped."
+
+## Full lifecycle: up + setup (container + onboard + devices)
+sim-all: sim-up sim-setup
+	@echo "Sim house $(HOUSE) fully provisioned!"
+
+## Show status of all sim containers
+sim-status:
+	@docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" --filter name=hemm-sim
+
+## Run sim house tests via pytest (sequential, all houses)
+sim-test: install-hactl
+	@echo "Running sim house tests..."
+	uv run pytest tests/sim/ -m sim --tb=short -q --log-cli-level=INFO
 
 ## Build (HACS compatible zip)
 build:

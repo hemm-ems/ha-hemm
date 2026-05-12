@@ -34,6 +34,7 @@ from .const import (
     CONF_BATTERY_CAPACITY_KWH,
     CONF_CAPACITY_KWH,
     CONF_CHARGE_EFFICIENCY,
+    CONF_CONTROL_CLASS,
     CONF_DEFROST_LOCKOUT_MIN,
     CONF_DEVICE_NAME,
     CONF_DEVICE_TYPE,
@@ -68,9 +69,11 @@ from .const import (
     CONF_VENDOR_MODEL,
     CONF_VOLUME_LITERS,
     CONF_WINDOW_AREA_M2,
+    DEFAULT_CONTROL_CLASS,
     DEVICE_PRO_SUPPORT,
     FORECAST_ADAPTERS,
     ConfigTier,
+    ControlClassHA,
     DeviceType,
 )
 
@@ -90,7 +93,11 @@ def _entity(domain: str | None = None) -> EntitySelector:
 
 def _safe_default_schema(tier: str) -> dict:
     """Common safe_default fields required for all device types."""
+    control_class_options = [c.value for c in ControlClassHA]
     schema: dict = {
+        vol.Optional(CONF_CONTROL_CLASS, default=DEFAULT_CONTROL_CLASS.value): SelectSelector(
+            SelectSelectorConfig(options=control_class_options, mode=SelectSelectorMode.DROPDOWN)
+        ),
         vol.Required(CONF_SAFE_DEFAULT_SCRIPT): TextSelector(TextSelectorConfig(type="text")),
     }
     if tier != ConfigTier.BEGINNER:

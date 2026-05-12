@@ -1,0 +1,111 @@
+# House: comfort — Heating-focused house
+# Tests COP-dependent heat pump scheduling, room comfort, legionella prevention,
+# HP defrost lockout, and safe-default watchdog.
+
+name: comfort
+description: "Heating-focused — HP + Room + WH + Thermostat with defrost and legionella quirks"
+ha_port: 8132
+
+hub:
+  solver_backend: milp_central
+  horizon_hours: 24
+  max_iterations: 50
+  price_adapter: template
+
+devices:
+  - type: pv_forecast
+    tier: beginner
+    config:
+      device_name: "Roof PV"
+      peak_power_kwp: 9.8
+      forecast_adapter: solcast
+    safe_default_script: script.hemm_pv_safe
+
+  - type: battery
+    tier: beginner
+    config:
+      device_name: "House Battery"
+      capacity_kwh: 10.0
+      max_charge_kw: 5.0
+      max_discharge_kw: 5.0
+    safe_default_script: script.hemm_battery_safe
+
+  - type: heat_pump
+    tier: beginner
+    config:
+      device_name: "Main Heat Pump"
+      max_power_kw: 5.0
+    safe_default_script: script.hemm_hp_safe
+
+  - type: room
+    tier: beginner
+    config:
+      device_name: "Living Room"
+      floor_area_m2: 35.0
+      insulation_class: good
+    safe_default_script: script.hemm_room_safe
+
+  - type: water_heater
+    tier: beginner
+    config:
+      device_name: "DHW Tank"
+      volume_liters: 200
+      max_power_kw: 3.0
+    safe_default_script: script.hemm_wh_safe
+
+  - type: thermostat_load
+    tier: beginner
+    config:
+      device_name: "Bathroom Radiator"
+      max_power_kw: 1.2
+    safe_default_script: script.hemm_thermostat_safe
+
+constraints:
+  - window_id: room_comfort
+    device_name: "Living Room"
+    deadline: "23:59"
+    requirement:
+      type: hold_temp_band
+      min_temp_c: 20.0
+      max_temp_c: 23.0
+    priority_penalty: 3.0
+
+  - window_id: legionella_cycle
+    device_name: "DHW Tank"
+    deadline: "23:59"
+    requirement:
+      type: reach_min_temp_once
+      target_temp_c: 60.0
+    priority_penalty: 10.0
+
+  - window_id: hp_min_runtime
+    device_name: "Main Heat Pump"
+    deadline: "23:59"
+    requirement:
+      type: min_runtime_per_day
+      min_hours: 4
+    priority_penalty: 4.0
+
+  - window_id: hp_max_runtime
+    device_name: "Main Heat Pump"
+    deadline: "23:59"
+    requirement:
+      type: max_runtime_per_day
+      max_hours: 16
+    priority_penalty: 3.0
+
+  - window_id: thermostat_max_runtime
+    device_name: "Bathroom Radiator"
+    deadline: "23:59"
+    requirement:
+      type: max_runtime_per_day
+      max_hours: 8
+    priority_penalty: 2.0
+
+quirks:
+  - name: hp_defrost_lockout
+    description: "HP defrost sensor → forbidden_window on heat pump"
+  - name: legionella_daily
+    description: "Daily reach_min_temp_once constraint on DHW"
+  - name: safe_default_watchdog
+    description: "Coordinator stall >30min triggers safe_default"

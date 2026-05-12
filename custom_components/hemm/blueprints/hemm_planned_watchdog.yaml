@@ -1,0 +1,102 @@
+blueprint:
+  name: "HEMM — Planned Device Watchdog"
+  description: >
+    Reference implementation for planned (control_class: planned) devices.
+    Monitors the actual power of a device and compares it to the HEMM plan
+    sensor. If the drift exceeds a threshold for longer than the configured
+    duration, calls hemm.replan with device_filter to trigger a scoped
+    re-optimization.
+
+    Typical use: heat pump, house battery, pool pump — devices where
+    persistent deviation from plan means the situation has changed and
+    a new plan is needed.
+  domain: automation
+  homeassistant:
+    min_version: "2024.6.0"
+  input:
+    plan_sensor:
+      name: HEMM Plan Sensor
+      description: "The sensor.hemm_<device>_plan entity providing the planned power in kW."
+      selector:
+        entity:
+          domain: sensor
+    actual_power_sensor:
+      name: Actual Power Sensor
+      description: "Sensor measuring the device's real power draw in kW or W."
+      selector:
+        entity:
+          domain: sensor
+          device_class: power
+    device_id:
+      name: HEMM Device ID
+      description: The device_id used in the HEMM manifest (passed to hemm.replan device_filter).
+      selector:
+        text:
+    drift_threshold_kw:
+      name: Drift Threshold (kW)
+      description: "Minimum deviation from plan before considering it a drift."
+      default: 0.5
+      selector:
+        number:
+          min: 0.1
+          max: 10
+          step: 0.1
+          unit_of_measurement: "kW"
+    drift_duration_minutes:
+      name: Drift Duration (minutes)
+      description: "How long drift must persist before triggering replan."
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 30
+          step: 1
+          unit_of_measurement: "min"
+    cooldown_minutes:
+      name: Cooldown (minutes)
+      description: "Minimum time between replan triggers to avoid thrashing."
+      default: 15
+      selector:
+        number:
+          min: 5
+          max: 60
+          step: 5
+          unit_of_measurement: "min"
+
+trigger:
+  - platform: time_pattern
+    minutes: "/1"
+
+condition:
+  # Only trigger if both sensors are available
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: !input plan_sensor
+        state: "unavailable"
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: !input actual_power_sensor
+        state: "unavailable"
+
+action:
+  - variables:
+      planned_kw: "{{ states(input.plan_sensor) | float(0) }}"
+      actual_kw: "{{ states(input.actual_power_sensor) | float(0) }}"
+      drift_kw: "{{ (actual_kw - planned_kw) | abs }}"
+      threshold: !input drift_threshold_kw
+      dev_id: !input device_id
+  - condition: template
+    value_template: "{{ drift_kw > threshold }}"
+  # Check drift has persisted (use last_changed of plan sensor as proxy)
+  - condition: template
+    value_template: >
+      {{ (now() - states.sensor[input.plan_sensor.split('.')[1]].last_changed).total_seconds() > (input.drift_duration_minutes * 60) }}
+  - service: hemm.replan
+    data:
+      device_filter:
+        - "{{ dev_id }}"
+
+mode: single
+max_exceeded: silent

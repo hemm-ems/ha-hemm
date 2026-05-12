@@ -888,15 +888,17 @@ class TestDiagnosticsExtended:
 class TestSensorsWithDevices:
     """Sensor creation when devices are configured."""
 
-    async def test_creates_three_sensors(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
+    async def test_creates_four_sensors(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
         states = hass.states.async_all("sensor")
         # Entity IDs use device name, not "hemm" prefix (e.g., sensor.living_room_living_room_plan)
         plan = [s for s in states if "plan" in s.entity_id]
         confidence = [s for s in states if "confidence" in s.entity_id]
         mode = [s for s in states if "mode" in s.entity_id]
+        reason = [s for s in states if "reason" in s.entity_id]
         assert len(plan) >= 1
         assert len(confidence) >= 1
         assert len(mode) >= 1
+        assert len(reason) >= 1
 
     async def test_initial_state(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
         """Mode sensor starts in unknown (no coordinator update) or idle."""
@@ -904,6 +906,13 @@ class TestSensorsWithDevices:
         mode_sensors = [s for s in states if "mode" in s.entity_id]
         if mode_sensors:
             assert mode_sensors[0].state in ("unknown", "idle")
+
+    async def test_reason_sensor_default_idle(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
+        """Reason sensor starts in 'idle' or 'unknown' before first solve."""
+        states = hass.states.async_all("sensor")
+        reason_sensors = [s for s in states if "reason" in s.entity_id]
+        if reason_sensors:
+            assert reason_sensors[0].state in ("unknown", "idle")
 
 
 # ──────────────────────── Repairs ────────────────────────
@@ -946,3 +955,77 @@ class TestIdentificationIntegration:
     async def test_id_results_property(self, hass: HomeAssistant, init_integration: ConfigEntry) -> None:
         coordinator: HemmCoordinator = hass.data[DOMAIN][init_integration.entry_id]
         assert isinstance(coordinator.id_results, list)
+
+
+# ──────────────────────── Replan Device Filter ────────────────────────
+
+
+@pytest.mark.unit
+class TestReplanDeviceFilter:
+    """Tests for hemm.replan device_filter parameter."""
+
+    async def test_replan_schema_accepts_device_filter(
+        self, hass: HomeAssistant, init_integration: ConfigEntry
+    ) -> None:
+        """hemm.replan schema validates device_filter field without error."""
+        coordinator: HemmCoordinator = hass.data[DOMAIN][init_integration.entry_id]
+        # Mock async_run_solver to avoid hemm core import
+        called_with: dict = {}
+
+        async def _fake_solver(*, dry_run=False, device_filter=None):
+            called_with["dry_run"] = dry_run
+            called_with["device_filter"] = device_filter
+            # Return a minimal mock result
+            mock_result = MagicMock()
+            mock_result.status = MagicMock(value="optimal")
+            mock_result.solve_time_seconds = 0.0
+            return mock_result
+
+        coordinator.async_run_solver = _fake_solver
+        await hass.services.async_call(DOMAIN, SERVICE_REPLAN, {"device_filter": ["some_device"]}, blocking=True)
+        assert called_with["device_filter"] == ["some_device"]
+
+    async def test_replan_without_device_filter(self, hass: HomeAssistant, init_integration: ConfigEntry) -> None:
+        """hemm.replan works without device_filter (backward compat)."""
+        coordinator: HemmCoordinator = hass.data[DOMAIN][init_integration.entry_id]
+
+        async def _fake_solver(*, dry_run=False, device_filter=None):
+            mock_result = MagicMock()
+            mock_result.status = MagicMock(value="optimal")
+            mock_result.solve_time_seconds = 0.0
+            return mock_result
+
+        coordinator.async_run_solver = _fake_solver
+        await hass.services.async_call(DOMAIN, SERVICE_REPLAN, {}, blocking=True)
+
+    async def test_replan_device_filter_forwarded(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
+        """device_filter is forwarded to coordinator.async_run_solver."""
+        coordinator: HemmCoordinator = hass.data[DOMAIN][init_with_devices.entry_id]
+        captured_filter: list = []
+
+        async def _fake_solver(*, dry_run=False, device_filter=None):
+            captured_filter.append(device_filter)
+            mock_result = MagicMock()
+            mock_result.status = MagicMock(value="optimal")
+            mock_result.solve_time_seconds = 0.0
+            return mock_result
+
+        coordinator.async_run_solver = _fake_solver
+        await hass.services.async_call(DOMAIN, SERVICE_REPLAN, {"device_filter": ["room_1"]}, blocking=True)
+        assert captured_filter == [["room_1"]]
+
+
+# ──────────────────────── Control Class Config ────────────────────────
+
+
+@pytest.mark.unit
+class TestControlClassConfig:
+    """Tests for control_class in device configuration."""
+
+    async def test_device_plans_include_reason(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
+        """device_plans dict includes a 'reason' key per device."""
+        coordinator: HemmCoordinator = hass.data[DOMAIN][init_with_devices.entry_id]
+        plans = coordinator.data["device_plans"]
+        assert "room_1" in plans
+        assert "reason" in plans["room_1"]
+        assert plans["room_1"]["reason"] == "idle"

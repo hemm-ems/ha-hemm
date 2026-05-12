@@ -1,0 +1,32 @@
+# Family house automations — EV plug lifecycle quirk.
+# When EV is plugged in, add charging constraint.
+# When EV is unplugged, remove the constraint.
+
+- id: hemm_ev_plug_in
+  alias: "HEMM: EV Plugged In → Add Charge Constraint"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.ev_plugged_in
+      to: "on"
+  action:
+    - service: hemm.add_constraint_window
+      data:
+        window_id: "ev_departure_auto"
+        device_filter: "Garage Wallbox"
+        deadline: "{{ today_at('07:00') | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
+        requirement_type: "min_energy_until"
+        requirement_params:
+          min_energy_kwh: 30.0
+        priority_penalty: 5.0
+        ttl_seconds: 86400
+
+- id: hemm_ev_unplug
+  alias: "HEMM: EV Unplugged → Remove Charge Constraint"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.ev_plugged_in
+      to: "off"
+  action:
+    - service: hemm.remove_constraint
+      data:
+        window_id: "ev_departure_auto"

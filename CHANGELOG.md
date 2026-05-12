@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Zeitdynamik-Erweiterung (Sonnenproblem)**:
+  - `control_class` field in device configuration (`passive` / `reactive` / `planned`, default: `planned`)
+  - `sensor.hemm_<device>_reason` — per-device reason sensor (enum: pv_surplus, cheap_grid, constraint, idle, manual, safety_default)
+  - 4 sensors per device (was 3): plan, confidence, mode, **reason**
+  - `device_filter` parameter on `hemm.replan` service for selective re-optimization
+  - 3 new reference blueprints: `hemm_passive_meter`, `hemm_reactive_follower`, `hemm_planned_watchdog`
+  - Container integration tests for all Zeitdynamik features
+- **Sim House Testing Framework**:
+  - 5 declarative house variants (starter, family, comfort, villa, para14a) each provisioned in Docker
+  - YAML-driven house definitions — add new house variants without Python changes
+  - Covers all 7 device types, all 3 control classes, all 7 constraint types
+  - Real-world quirk automations: HP defrost lockout, legionella cycle, EV plug lifecycle, §14a grid reduction
+  - `make sim-up/sim-setup/sim-down/sim-all/sim-test` lifecycle targets
+  - 35 parametrized pytest tests (7 checks × 5 houses)
+
 ## [2026.5.0] - 2026-05-11
 
 ### Added

@@ -1,0 +1,42 @@
+# §14a house automations — grid reduction locks out HP + EV simultaneously.
+# German §14a EnWG: grid operators can reduce controllable loads during grid stress.
+
+- id: hemm_14a_reduction_start
+  alias: "HEMM: §14a Grid Reduction → Lock HP + EV"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.grid_reduction_active
+      to: "on"
+  action:
+    # Forbid heat pump operation during grid reduction
+    - service: hemm.add_constraint_window
+      data:
+        window_id: "14a_hp_lockout"
+        device_filter: "Main Heat Pump"
+        deadline: "{{ (now() + timedelta(hours=2)) | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
+        requirement_type: "forbidden_window"
+        priority_penalty: 50.0
+        ttl_seconds: 7200
+    # Forbid EV charging during grid reduction
+    - service: hemm.add_constraint_window
+      data:
+        window_id: "14a_ev_lockout"
+        device_filter: "Garage Wallbox"
+        deadline: "{{ (now() + timedelta(hours=2)) | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
+        requirement_type: "forbidden_window"
+        priority_penalty: 50.0
+        ttl_seconds: 7200
+
+- id: hemm_14a_reduction_end
+  alias: "HEMM: §14a Grid Reduction Over → Unlock HP + EV"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.grid_reduction_active
+      to: "off"
+  action:
+    - service: hemm.remove_constraint
+      data:
+        window_id: "14a_hp_lockout"
+    - service: hemm.remove_constraint
+      data:
+        window_id: "14a_ev_lockout"

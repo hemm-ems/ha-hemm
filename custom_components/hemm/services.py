@@ -84,6 +84,7 @@ def _get_coordinator(hass: HomeAssistant) -> HemmCoordinator:
 REPLAN_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_DRY_RUN, default=False): cv.boolean,
+        vol.Optional("device_filter"): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -152,8 +153,9 @@ async def async_register_services(hass: HomeAssistant) -> None:
         """Handle hemm.replan service call."""
         coordinator = _get_coordinator(hass)
         dry_run = call.data.get(ATTR_DRY_RUN, False)
-        _LOGGER.info("hemm.replan called (dry_run=%s)", dry_run)
-        result = await coordinator.async_run_solver(dry_run=dry_run)
+        device_filter = call.data.get("device_filter")
+        _LOGGER.info("hemm.replan called (dry_run=%s, device_filter=%s)", dry_run, device_filter)
+        result = await coordinator.async_run_solver(dry_run=dry_run, device_filter=device_filter)
         if not dry_run:
             await coordinator.async_request_refresh()
         _LOGGER.info("Replan complete: status=%s, time=%.2fs", result.status, result.solve_time_seconds)

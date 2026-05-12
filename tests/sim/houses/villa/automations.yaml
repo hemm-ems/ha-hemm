@@ -1,0 +1,74 @@
+# Villa house automations — EV plug lifecycle + HP defrost + legionella.
+
+- id: hemm_ev_plug_in
+  alias: "HEMM: EV Plugged In → Add Charge Constraint"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.ev_plugged_in
+      to: "on"
+  action:
+    - service: hemm.add_constraint_window
+      data:
+        window_id: "ev_departure_auto"
+        device_filter: "Garage Wallbox"
+        deadline: "{{ today_at('07:30') | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
+        requirement_type: "min_energy_until"
+        requirement_params:
+          min_energy_kwh: 40.0
+        priority_penalty: 7.0
+        ttl_seconds: 86400
+
+- id: hemm_ev_unplug
+  alias: "HEMM: EV Unplugged → Remove Charge Constraint"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.ev_plugged_in
+      to: "off"
+  action:
+    - service: hemm.remove_constraint
+      data:
+        window_id: "ev_departure_auto"
+
+- id: hemm_hp_defrost_lockout
+  alias: "HEMM: HP Defrost → Forbidden Window"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.hp_defrost_active
+      to: "on"
+  action:
+    - service: hemm.add_constraint_window
+      data:
+        window_id: "hp_defrost_lockout"
+        device_filter: "Main Heat Pump"
+        deadline: "{{ (now() + timedelta(minutes=15)) | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
+        requirement_type: "forbidden_window"
+        priority_penalty: 20.0
+        ttl_seconds: 900
+
+- id: hemm_hp_defrost_clear
+  alias: "HEMM: HP Defrost Over → Remove Forbidden Window"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.hp_defrost_active
+      to: "off"
+  action:
+    - service: hemm.remove_constraint
+      data:
+        window_id: "hp_defrost_lockout"
+
+- id: hemm_legionella_daily
+  alias: "HEMM: Daily Legionella Prevention"
+  trigger:
+    - platform: time
+      at: "00:05:00"
+  action:
+    - service: hemm.add_constraint_window
+      data:
+        window_id: "legionella_daily"
+        device_filter: "DHW Tank"
+        deadline: "{{ today_at('23:59') | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
+        requirement_type: "reach_min_temp_once"
+        requirement_params:
+          target_temp_c: 60.0
+        priority_penalty: 10.0
+        ttl_seconds: 86400

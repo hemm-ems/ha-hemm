@@ -1,10 +1,11 @@
-"""Sensor platform for HEMM — per-device plan, confidence, and mode entities."""
+"""Sensor platform for HEMM — per-device plan, confidence, mode, and reason entities."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from homeassistant.components.sensor import (
+    SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
@@ -14,7 +15,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_DEVICE_NAME, CONF_DEVICE_TYPE, DOMAIN
+from .const import CONF_DEVICE_NAME, CONF_DEVICE_TYPE, DOMAIN, PLAN_REASONS
 from .coordinator import HemmCoordinator
 
 
@@ -36,6 +37,7 @@ async def async_setup_entry(
         entities.append(HemmPlanSensor(coordinator, entry, device_id, device_name, device_type))
         entities.append(HemmConfidenceSensor(coordinator, entry, device_id, device_name, device_type))
         entities.append(HemmModeSensor(coordinator, entry, device_id, device_name, device_type))
+        entities.append(HemmReasonSensor(coordinator, entry, device_id, device_name, device_type))
 
     async_add_entities(entities)
 
@@ -140,4 +142,39 @@ class HemmModeSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
         """Handle updated data from the coordinator."""
         plans = self.coordinator.data.get("device_plans", {}) if self.coordinator.data else {}
         self._attr_native_value = plans.get(self._device_id, {}).get("mode", "idle")
+        self.async_write_ha_state()
+
+
+class HemmReasonSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
+    """Sensor showing why the current setpoint was chosen for a device."""
+
+    _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = PLAN_REASONS
+
+    def __init__(
+        self,
+        coordinator: HemmCoordinator,
+        entry: ConfigEntry,
+        device_id: str,
+        device_name: str,
+        device_type: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._device_id = device_id
+        self._attr_unique_id = f"{entry.entry_id}_{device_id}_reason"
+        self._attr_name = f"{device_name} Reason"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, f"{entry.entry_id}_{device_id}")},
+            "name": device_name,
+            "manufacturer": "HEMM",
+            "model": device_type,
+            "via_device": (DOMAIN, entry.entry_id),
+        }
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        plans = self.coordinator.data.get("device_plans", {}) if self.coordinator.data else {}
+        self._attr_native_value = plans.get(self._device_id, {}).get("reason", "idle")
         self.async_write_ha_state()

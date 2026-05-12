@@ -1,0 +1,172 @@
+# House: villa — Full house with pool
+# Stress test: all 7 device types, all 3 control classes, all 7 constraint types,
+# 10 devices total. Pool modeled as large WaterHeater (2000L, 6 kW).
+
+name: villa
+description: "Full house — all device types, all control classes, all constraints"
+ha_port: 8133
+
+hub:
+  solver_backend: milp_central
+  horizon_hours: 24
+  max_iterations: 100
+  price_adapter: template
+
+devices:
+  - type: pv_forecast
+    tier: beginner
+    config:
+      device_name: "Roof PV"
+      peak_power_kwp: 12.0
+      forecast_adapter: solcast
+    safe_default_script: script.hemm_pv_safe
+
+  - type: battery
+    tier: beginner
+    config:
+      device_name: "House Battery"
+      capacity_kwh: 15.0
+      max_charge_kw: 7.5
+      max_discharge_kw: 7.5
+    safe_default_script: script.hemm_battery_safe
+
+  - type: heat_pump
+    tier: beginner
+    config:
+      device_name: "Main Heat Pump"
+      max_power_kw: 8.0
+    safe_default_script: script.hemm_hp_safe
+
+  - type: room
+    tier: beginner
+    config:
+      device_name: "Living Room"
+      floor_area_m2: 50.0
+      insulation_class: good
+    safe_default_script: script.hemm_room_safe
+
+  - type: water_heater
+    tier: beginner
+    config:
+      device_name: "DHW Tank"
+      volume_liters: 200
+      max_power_kw: 3.0
+    safe_default_script: script.hemm_wh_safe
+
+  - type: water_heater
+    tier: beginner
+    config:
+      device_name: "Pool Heater"
+      volume_liters: 1000
+      max_power_kw: 6.0
+    safe_default_script: script.hemm_pool_safe
+
+  - type: thermostat_load
+    tier: beginner
+    config:
+      device_name: "Bathroom Radiator"
+      max_power_kw: 1.2
+    safe_default_script: script.hemm_thermostat_safe
+
+  # Passive device — observation only, no steering
+  - type: thermostat_load
+    tier: beginner
+    config:
+      device_name: "Kitchen Loads"
+      max_power_kw: 3.5
+    safe_default_script: script.hemm_passive_safe
+    control_class: passive
+
+  - type: ev_charger
+    tier: beginner
+    config:
+      device_name: "Garage Wallbox"
+      max_charge_kw: 22.0
+    safe_default_script: script.hemm_ev_safe
+    control_class: reactive
+
+constraints:
+  - window_id: battery_morning_soc
+    device_name: "House Battery"
+    deadline: "07:00"
+    requirement:
+      type: min_soc_until
+      min_soc_pct: 60
+    priority_penalty: 3.0
+
+  - window_id: ev_departure
+    device_name: "Garage Wallbox"
+    deadline: "07:30"
+    requirement:
+      type: min_energy_until
+      min_energy_kwh: 40.0
+    priority_penalty: 7.0
+
+  - window_id: ev_quiet_hours
+    device_name: "Garage Wallbox"
+    deadline: "05:00"
+    requirement:
+      type: forbidden_window
+    priority_penalty: 1.0
+
+  - window_id: room_comfort
+    device_name: "Living Room"
+    deadline: "23:59"
+    requirement:
+      type: hold_temp_band
+      min_temp_c: 20.0
+      max_temp_c: 23.0
+    priority_penalty: 3.0
+
+  - window_id: pool_temp_band
+    device_name: "Pool Heater"
+    deadline: "23:59"
+    requirement:
+      type: hold_temp_band
+      min_temp_c: 26.0
+      max_temp_c: 30.0
+    priority_penalty: 1.5
+
+  - window_id: legionella_cycle
+    device_name: "DHW Tank"
+    deadline: "23:59"
+    requirement:
+      type: reach_min_temp_once
+      target_temp_c: 60.0
+    priority_penalty: 10.0
+
+  - window_id: hp_min_runtime
+    device_name: "Main Heat Pump"
+    deadline: "23:59"
+    requirement:
+      type: min_runtime_per_day
+      min_hours: 4
+    priority_penalty: 4.0
+
+  - window_id: hp_max_runtime
+    device_name: "Main Heat Pump"
+    deadline: "23:59"
+    requirement:
+      type: max_runtime_per_day
+      max_hours: 16
+    priority_penalty: 3.0
+
+  - window_id: thermostat_max_runtime
+    device_name: "Bathroom Radiator"
+    deadline: "23:59"
+    requirement:
+      type: max_runtime_per_day
+      max_hours: 8
+    priority_penalty: 2.0
+
+quirks:
+  - name: ev_plug_lifecycle
+    description: "Conditional EV constraint lifecycle"
+  - name: hp_defrost_lockout
+    description: "HP defrost → forbidden_window"
+  - name: legionella_daily
+    description: "Daily legionella prevention"
+  - name: priority_conflict
+    description: "9 devices competing for optimization"
+  - name: control_class_mixing
+    description: "Passive + reactive + planned coexisting"

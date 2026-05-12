@@ -25,6 +25,25 @@ Rule-based energy management ("charge EV when solar > 3 kW") works for a single 
 
 The central design decision is that the energy manager contains zero vendor-specific code. All hardware quirks stay in HA automations, where they can be shared across the community without changes to the core. A comparison with EMHASS and manual approaches is in the [onboarding guide](docs/onboarding.md#comparison-with-alternatives) (LLM-generated; not independently reviewed — treat as indicative).
 
+## Zeitdynamik — The Sonnenproblem
+
+Not every device is a battery that HEMM can schedule hours ahead. Real homes have three device classes:
+
+| Class | Behavior | Example |
+|-------|----------|---------|
+| **planned** | Solver schedules 15-min slots ahead | Battery, EV charger |
+| **reactive** | Follows a setpoint in real-time (seconds) | Heat pump modulation, inverter curtailment |
+| **passive** | Only monitored, never actuated | Non-smart appliances, grid meter |
+
+Each device declares its `control_class` in the config flow. HEMM creates a **reason sensor** (`sensor.hemm_<device>_reason`) explaining *why* the current setpoint was chosen: `pv_surplus`, `cheap_grid`, `constraint`, `idle`, `manual`, or `safety_default`.
+
+Three reference blueprints ship for the three classes:
+- `hemm_passive_meter` — energy-sensor mapping for passive devices
+- `hemm_reactive_follower` — seconds-interval loop reading setpoints
+- `hemm_planned_watchdog` — drift detection → `hemm.replan` with `device_filter`
+
+The `hemm.replan` service accepts an optional `device_filter` list to re-optimize only specific devices without disturbing the rest of the fleet.
+
 ## Onboarding
 
 → **[Onboarding Guide](docs/onboarding.md)** — principles, two worked examples (4-device setup → full 7-device house), what HA objects to create, troubleshooting.
@@ -44,10 +63,11 @@ HACS support is in progress. When available, add `https://github.com/swifty99/ha
 
 ## Testing
 
-ha-hemm uses three test layers:
+ha-hemm uses four test layers:
 
 - **Unit tests** run in-process against `pytest-homeassistant-custom-component`. No Docker required, completes in under 30 seconds.
 - **Container tests** start a real HA instance in Docker, install the integration, and exercise it via the REST API. CI runs these on every push against three HA versions (stable, previous, beta).
+- **Sim house tests** provision complete houses (2–9 devices each) in Docker and verify 5-minute stability. Five house variants cover all 7 device types, all 3 control classes, all 7 constraint types, and real-world quirks (defrost lockout, legionella, EV plug lifecycle, §14a grid reduction).
 - **Pi tests** (planned) will validate performance on Raspberry Pi hardware under realistic resource constraints.
 
 See [docs/testing.md](docs/testing.md) for how to run each layer locally.

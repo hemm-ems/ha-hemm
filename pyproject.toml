@@ -21,6 +21,8 @@ dev = [
     "pytest-homeassistant-custom-component>=0.13",
     "ruff>=0.4",
     "pre-commit>=3.7",
+    "pyyaml>=6.0",
+    "aiohttp>=3.9",
 ]
 
 [project.urls]
@@ -60,7 +62,8 @@ markers = [
     "container: Container-based integration tests (requires Docker)",
     "pi: Tests that run on Raspberry Pi hardware only",
     "slow: Long-running simulation tests",
+    "sim: Sim house tests (Docker + full HA provisioning per house)",
 ]
-addopts = "-m 'not container and not pi and not slow' --strict-markers"
+addopts = "-m 'not container and not pi and not slow and not sim' --strict-markers"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

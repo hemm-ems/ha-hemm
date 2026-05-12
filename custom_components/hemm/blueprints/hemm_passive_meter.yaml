@@ -1,0 +1,34 @@
+blueprint:
+  name: "HEMM — Passive Device Meter Mapping"
+  description: >
+    Reference implementation for passive (control_class: passive) devices.
+    Maps an energy sensor of an unplannable device (e.g. kettle, oven,
+    instantaneous water heater) into the HA energy dashboard. HEMM observes
+    the consumption but never steers or replans for this device.
+
+    This is a skeleton — adapt to your specific energy sensor entity.
+  domain: automation
+  homeassistant:
+    min_version: "2024.6.0"
+  input:
+    energy_sensor:
+      name: Energy Sensor
+      description: The energy sensor (kWh) of the passive device.
+      selector:
+        entity:
+          domain: sensor
+          device_class: energy
+    device_name:
+      name: Device Name
+      description: Human-readable name for logging.
+      default: "Passive Device"
+      selector:
+        text:
+
+# This blueprint intentionally has no trigger/action — passive devices
+# require no automation. The blueprint exists to document the pattern and
+# provide a starting point for users who want energy tracking notifications.
+
+trigger: []
+
+action: []

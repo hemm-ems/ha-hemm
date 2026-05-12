@@ -192,11 +192,12 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Update priority for a constraint window."""
         return self.constraint_manager.bump_priority(window_id, new_penalty)
 
-    async def async_run_solver(self, *, dry_run: bool = False) -> Any:
+    async def async_run_solver(self, *, dry_run: bool = False, device_filter: list[str] | None = None) -> Any:
         """Run the optimization solver.
 
         Args:
             dry_run: If True, run the solver but don't update plans.
+            device_filter: If provided, only re-optimize these device IDs.
 
         Returns:
             The solver result.
@@ -208,6 +209,18 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return SolverResult(status=SolverStatus.OPTIMAL)
 
         manifests = build_all_manifests(devices)
+
+        # Apply device_filter: only pass matching manifests to solver
+        if device_filter:
+            filtered_manifests = [m for m in manifests if m.device_id in device_filter]
+            unknown_ids = set(device_filter) - {m.device_id for m in manifests}
+            if unknown_ids:
+                _LOGGER.warning("device_filter contains unknown device IDs: %s", unknown_ids)
+            if not filtered_manifests:
+                _LOGGER.warning("device_filter matched no devices, skipping replan")
+                return SolverResult(status=SolverStatus.OPTIMAL)
+            manifests = filtered_manifests
+
         now = dt_util.utcnow()
 
         # Expire old constraint windows
@@ -337,12 +350,14 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                 "power_kw": slot.power_kw,
                                 "confidence_pct": 95.0 if result.status == SolverStatus.OPTIMAL else 70.0,
                                 "mode": slot.mode or "active",
+                                "reason": slot.reason if hasattr(slot, "reason") else "idle",
                             }
                         else:
                             device_plans[device_id] = {
                                 "power_kw": 0.0,
                                 "confidence_pct": 0.0,
                                 "mode": "idle",
+                                "reason": "idle",
                             }
                 else:
                     for device in devices:
@@ -351,6 +366,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             "power_kw": 0.0,
                             "confidence_pct": 0.0,
                             "mode": "error" if result.status == SolverStatus.ERROR else "idle",
+                            "reason": "safety_default" if result.status == SolverStatus.ERROR else "idle",
                         }
             except Exception:
                 _LOGGER.debug("Could not read cached solver result", exc_info=True)
@@ -364,6 +380,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "power_kw": 0.0,
                     "confidence_pct": 0.0,
                     "mode": "idle",
+                    "reason": "idle",
                 }
 
         return {

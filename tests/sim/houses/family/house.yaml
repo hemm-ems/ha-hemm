@@ -1,0 +1,68 @@
+# House: family — PV + Battery + EV
+# Demonstrates control class mixing (planned + reactive), conditional constraint
+# lifecycle (EV plug), and priority conflicts (battery vs EV for cheap slots).
+
+name: family
+description: "PV + Battery + EV — control class mixing and plug lifecycle"
+ha_port: 8131
+
+hub:
+  solver_backend: milp_central
+  horizon_hours: 24
+  max_iterations: 50
+  price_adapter: template
+
+devices:
+  - type: pv_forecast
+    tier: beginner
+    config:
+      device_name: "Roof PV"
+      peak_power_kwp: 9.8
+      forecast_adapter: solcast
+    safe_default_script: script.hemm_pv_safe
+
+  - type: battery
+    tier: beginner
+    config:
+      device_name: "House Battery"
+      capacity_kwh: 10.0
+      max_charge_kw: 5.0
+      max_discharge_kw: 5.0
+    safe_default_script: script.hemm_battery_safe
+
+  - type: ev_charger
+    tier: beginner
+    config:
+      device_name: "Garage Wallbox"
+      max_charge_kw: 11.0
+    safe_default_script: script.hemm_ev_safe
+
+constraints:
+  - window_id: battery_morning_soc
+    device_name: "House Battery"
+    deadline: "06:00"
+    requirement:
+      type: min_soc_until
+      min_soc_pct: 60
+    priority_penalty: 3.0
+
+  - window_id: ev_departure
+    device_name: "Garage Wallbox"
+    deadline: "07:00"
+    requirement:
+      type: min_energy_until
+      min_energy_kwh: 30.0
+    priority_penalty: 5.0
+
+  - window_id: ev_quiet_hours
+    device_name: "Garage Wallbox"
+    deadline: "05:00"
+    requirement:
+      type: forbidden_window
+    priority_penalty: 1.0
+
+quirks:
+  - name: ev_plug_lifecycle
+    description: "Add/remove EV constraint based on plug state"
+  - name: priority_conflict
+    description: "Battery vs EV competing for cheap grid slots"

@@ -55,7 +55,11 @@
         "description": "Set device parameters. A safe default script is mandatory.",
         "data": {
           "device_name": "Device name",
+          "control_class": "Control class",
           "safe_default_script": "Safe default script"
+        },
+        "data_description": {
+          "control_class": "How HEMM treats this device: passive (observe only), reactive (setpoint + envelope), planned (full optimization)."
         }
       }
     },
@@ -81,6 +85,10 @@
         "dry_run": {
           "name": "Dry run",
           "description": "Run the optimizer without applying results."
+        },
+        "device_filter": {
+          "name": "Device filter",
+          "description": "Optional list of device IDs to re-optimize. Others keep their current plan."
         }
       }
     },

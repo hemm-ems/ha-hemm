@@ -1,0 +1,89 @@
+# House: para14a — German §14a grid compliance
+# Tests simultaneous forbidden_window on HP + EV triggered by grid operator signal.
+# Battery must buffer during lockout. Comfort degrades gracefully.
+# Priority hierarchy: safety > regulation > comfort > cost.
+
+name: para14a
+description: "§14a compliance — grid reduction forces HP+EV lockout, battery buffers"
+ha_port: 8134
+
+hub:
+  solver_backend: milp_central
+  horizon_hours: 24
+  max_iterations: 50
+  price_adapter: template
+
+devices:
+  - type: pv_forecast
+    tier: beginner
+    config:
+      device_name: "Roof PV"
+      peak_power_kwp: 9.8
+      forecast_adapter: solcast
+    safe_default_script: script.hemm_pv_safe
+
+  - type: battery
+    tier: beginner
+    config:
+      device_name: "House Battery"
+      capacity_kwh: 10.0
+      max_charge_kw: 5.0
+      max_discharge_kw: 5.0
+    safe_default_script: script.hemm_battery_safe
+
+  - type: heat_pump
+    tier: beginner
+    config:
+      device_name: "Main Heat Pump"
+      max_power_kw: 5.0
+    safe_default_script: script.hemm_hp_safe
+
+  - type: room
+    tier: beginner
+    config:
+      device_name: "Living Room"
+      floor_area_m2: 35.0
+      insulation_class: good
+    safe_default_script: script.hemm_room_safe
+
+  - type: ev_charger
+    tier: beginner
+    config:
+      device_name: "Garage Wallbox"
+      max_charge_kw: 11.0
+    safe_default_script: script.hemm_ev_safe
+
+constraints:
+  # Battery must have charge to survive grid reduction
+  - window_id: battery_reserve
+    device_name: "House Battery"
+    deadline: "23:59"
+    requirement:
+      type: min_soc_until
+      min_soc_pct: 40
+    priority_penalty: 5.0
+
+  # Room comfort — best-effort during lockout
+  - window_id: room_comfort
+    device_name: "Living Room"
+    deadline: "23:59"
+    requirement:
+      type: hold_temp_band
+      min_temp_c: 19.0
+      max_temp_c: 23.0
+    priority_penalty: 2.0
+
+  # EV must charge despite lockout windows
+  - window_id: ev_departure
+    device_name: "Garage Wallbox"
+    deadline: "07:00"
+    requirement:
+      type: min_energy_until
+      min_energy_kwh: 25.0
+    priority_penalty: 4.0
+
+quirks:
+  - name: para14a_grid_reduction
+    description: "§14a signal → forbidden_window on HP + EV simultaneously"
+  - name: priority_conflict
+    description: "Grid compliance (mandatory) vs comfort (best-effort) vs EV deadline"

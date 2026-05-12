@@ -133,3 +133,28 @@ DEVICE_PRO_SUPPORT: set[str] = {
     DeviceType.PV_FORECAST,
     DeviceType.EV_CHARGER,
 }
+
+
+# Control class — mirrors hemm.manifest.types.ControlClass
+CONF_CONTROL_CLASS = "control_class"
+
+
+class ControlClassHA(StrEnum):
+    """Control class for device time-dynamics behavior."""
+
+    PASSIVE = "passive"
+    REACTIVE = "reactive"
+    PLANNED = "planned"
+
+
+DEFAULT_CONTROL_CLASS = ControlClassHA.PLANNED
+
+# Plan reason values (mirrors hemm.manifest.messages.PlanReason)
+PLAN_REASONS: list[str] = [
+    "pv_surplus",
+    "cheap_grid",
+    "manual",
+    "safety_default",
+    "constraint",
+    "idle",
+]

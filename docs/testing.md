@@ -200,7 +200,138 @@ The companion is installed and started automatically during container setup. If 
 
 ---
 
-## Layer 3: Pi Hardware Tests
+## Layer 2.5: Sim House Tests
+
+Sim house tests sit between container tests and Pi tests. They exercise the full device provisioning lifecycle against realistic house configurations — each house has a distinct mix of device types, control classes, constraints, and quirks modeled as HA automations.
+
+While container tests verify that individual features work in isolation, sim tests verify that a complete house with multiple devices coexists without errors for an extended period. Each house runs in its own Docker container with a house-specific HA configuration overlay.
+
+### The five houses
+
+| House | Port | Devices | Quirks |
+|---|---|---|---|
+| **starter** | 8130 | PV + Battery (2) | None — baseline |
+| **family** | 8131 | PV + Battery + EV (3) | EV plug lifecycle, priority conflicts |
+| **comfort** | 8132 | PV + Battery + HP + Room + WH + Thermostat (6) | HP defrost lockout, legionella cycle, safe-default watchdog |
+| **villa** | 8133 | All 7 types, 9 devices incl. pool + passive kitchen | All control classes, all constraint types |
+| **para14a** | 8134 | PV + Battery + HP + Room + EV (5) | §14a grid reduction (simultaneous HP+EV lockout) |
+
+Each house is defined declaratively in `tests/sim/houses/<name>/house.yaml` with an accompanying `automations.yaml` for quirk-specific HA automations. Adding a new house variant means creating a new directory with those two files — no Python changes required.
+
+### House YAML structure
+
+```yaml
+name: starter
+description: "PV + Battery baseline — simplest HEMM house"
+ha_port: 8130
+
+hub:
+  solver_backend: milp_central
+  horizon_hours: 24
+  max_iterations: 50
+  price_adapter: template
+
+devices:
+  - type: battery
+    tier: beginner
+    config:
+      device_name: "House Battery"
+      capacity_kwh: 10.0
+      max_charge_kw: 5.0
+      max_discharge_kw: 5.0
+    safe_default_script: script.hemm_battery_safe
+
+constraints:
+  - window_id: battery_morning_soc
+    device_name: "House Battery"
+    deadline: "07:00"
+    requirement:
+      type: min_soc_until
+      min_soc_pct: 50
+    priority_penalty: 2.0
+
+quirks: []
+```
+
+### Running sim tests
+
+```bash
+# Run all 5 houses sequentially (each gets its own container lifecycle)
+make sim-test
+
+# Or run the full orchestrator with 5-minute stability monitoring
+uv run python tests/sim/_run_all_houses.py
+
+# Single house (manual lifecycle)
+make sim-up HOUSE=starter        # Start container
+make sim-setup HOUSE=starter     # Onboard + provision devices
+make sim-down HOUSE=starter      # Tear down
+
+# Full single-house lifecycle
+make sim-all HOUSE=starter
+
+# Check running sim containers
+make sim-status
+```
+
+### How the sim stack works
+
+```
+tests/sim/
+├── docker-compose.sim.yml          # Parameterized compose (HOUSE_NAME, HOUSE_PORT)
+├── base_config/
+│   ├── configuration.yaml          # Shared HA config (mock sensors, input entities)
+│   └── scripts.yaml                # No-op safe_default scripts for all device types
+├── houses/
+│   ├── starter/
+│   │   ├── house.yaml              # Declarative house definition
+│   │   └── automations.yaml        # House-specific HA automations
+│   ├── family/
+│   ├── comfort/
+│   ├── villa/
+│   └── para14a/
+├── runner.py                       # Setup engine (reads YAML, drives hactl)
+├── conftest.py                     # Pytest fixtures (sim_house parametrized fixture)
+├── test_sim_houses.py              # 7 tests × 5 houses = 35 parametrized tests
+├── _setup_house.py                 # Standalone setup script (used by Makefile)
+└── _run_all_houses.py              # Full orchestrator with stability monitoring
+```
+
+Each container gets:
+- The HEMM custom component (bind-mounted read-only)
+- The hemm core library (pip-installed after container start)
+- Base HA config with mock price sensor (template), input_booleans for quirk triggers (EV plug, HP defrost, grid reduction), and input_numbers for simulated device states
+- House-specific automations overlaid from `houses/<name>/automations.yaml`
+
+The setup engine (`runner.py` / `_setup_house.py`) drives the full provisioning:
+
+1. Wait for HA healthy
+2. Headless onboarding (create owner → auth code → access token → WS long-lived token)
+3. Create HEMM hub via config flow
+4. For each device: 3-step options flow (add_device → select_device → configure_device)
+5. Verify entities exist and hub is loaded
+
+### Adding a new house
+
+1. Create `tests/sim/houses/<name>/house.yaml` following the structure above
+2. Create `tests/sim/houses/<name>/automations.yaml` (can be `[]` for no quirks)
+3. Add port mapping to `_setup_house.py` `HOUSE_PORTS` dict and `_run_all_houses.py` `HOUSES` list
+4. Add named volume to `docker-compose.sim.yml`
+5. Run `make sim-all HOUSE=<name>` to verify
+
+The test file auto-discovers houses via `discover_house_names()` — pytest parametrization picks up new houses automatically.
+
+### What the sim tests check
+
+| Test | What it verifies |
+|---|---|
+| `test_house_setup_succeeds` | All devices provision without error |
+| `test_hub_is_loaded` | HEMM config entry stays in `loaded` state |
+| `test_entities_created` | At least N hemm entities exist (N = device count) |
+| `test_replan_service_callable` | `hemm.replan` service runs without error |
+| `test_no_hemm_errors_in_log` | No ERROR-level hemm log entries |
+| `test_constraint_count_matches` | Constraint definitions are non-empty |
+| `test_device_count_matches` | Config entry exists and is loaded |
 
 Pi tests carry the `@pytest.mark.pi` marker and are planned for Phase 8. They will run hactl from the development machine pointed at a real HA instance on a Raspberry Pi:
 
@@ -238,6 +369,8 @@ The only hard prerequisite for unit tests is Python 3.12+ and `uv`. Container te
 | Lint + unit tests | `make ci` (or run both manually) | No | ~15 seconds |
 | Container tests (full cycle) | `make test-container` | Yes | ~3 min first, ~2 min cached |
 | Container tests (stack running) | `make test-container-quick` | Yes (running) | ~2 min |
+| Sim house tests (all 5) | `make sim-test` | Yes | ~35 min |
+| Sim single house | `make sim-all HOUSE=starter` | Yes | ~7 min |
 | Specific test file | see below | Yes (running) | ~20 seconds |
 | All CI checks | `make ci-full` | Yes | ~3 min |
 | Lint only | `make lint` | No | ~2 seconds |
@@ -350,35 +483,41 @@ If a future HA release breaks the integration, the container tests will fail bef
 
 The table below summarizes the current coverage across ha-hemm's features. "Unit" means there are in-process HA tests; "Container" means the feature is exercised by hactl against a real HA instance; "Companion" means the companion addon is involved.
 
-| Feature area | Unit | Container |
-|---|---|---|
-| Config flow (hub setup) | ✓ | ✓ |
-| Config flow (duplicate detection) | ✓ | ✓ |
-| Options flow (settings) | ✓ | ✓ |
-| Options flow (add device) | ✓ | ✓ |
-| Device flow (all 7 types, beginner) | ✓ | ✓ |
-| Device flow (pro tier) | ✓ | — |
-| `safe_default` validation | ✓ | ✓ |
-| Integration setup/unload | ✓ | ✓ |
-| Integration reload | ✓ | ✓ |
-| Coordinator creation | ✓ | ✓ |
-| Sensor entity creation | ✓ | ✓ |
-| Per-device sensor count | — | ✓ |
-| Diagnostics endpoint | ✓ | ✓ |
-| Manifest validation (all 7 types) | — | ✓ |
-| Identification stubs | ✓ | — |
-| Repair flow framework | ✓ | — |
-| HA health check | — | ✓ |
-| Error log monitoring | — | ✓ |
-| Custom component visibility | — | ✓ |
-| Issues/repairs listing | — | ✓ |
-| Stress (rapid reloads) | — | ✓ |
-| Stress (multi-device add) | — | ✓ |
-| Dashboard CRUD | — | ✓ |
-| Template evaluation (via hactl) | — | ✓ |
-| Script listing (via hactl) | — | ✓ |
-| Automation listing (via hactl) | — | ✓ |
-| Config check (service call) | — | ✓ |
+| Feature area | Unit | Container | Sim |
+|---|---|---|---|
+| Config flow (hub setup) | ✓ | ✓ | ✓ |
+| Config flow (duplicate detection) | ✓ | ✓ | — |
+| Options flow (settings) | ✓ | ✓ | — |
+| Options flow (add device) | ✓ | ✓ | ✓ |
+| Device flow (all 7 types, beginner) | ✓ | ✓ | ✓ |
+| Device flow (pro tier) | ✓ | — | — |
+| `safe_default` validation | ✓ | ✓ | — |
+| Integration setup/unload | ✓ | ✓ | — |
+| Integration reload | ✓ | ✓ | — |
+| Coordinator creation | ✓ | ✓ | — |
+| Sensor entity creation | ✓ | ✓ | ✓ |
+| Per-device sensor count | — | ✓ | ✓ |
+| Diagnostics endpoint | ✓ | ✓ | — |
+| Manifest validation (all 7 types) | — | ✓ | — |
+| Identification stubs | ✓ | — | — |
+| Repair flow framework | ✓ | — | — |
+| HA health check | — | ✓ | ✓ |
+| Error log monitoring | — | ✓ | ✓ |
+| Custom component visibility | — | ✓ | — |
+| Issues/repairs listing | — | ✓ | — |
+| Stress (rapid reloads) | — | ✓ | — |
+| Stress (multi-device add) | — | ✓ | ✓ |
+| Dashboard CRUD | — | ✓ | — |
+| Template evaluation (via hactl) | — | ✓ | — |
+| Script listing (via hactl) | — | ✓ | — |
+| Automation listing (via hactl) | — | ✓ | — |
+| Config check (service call) | — | ✓ | — |
+| Multi-device coexistence (2–9 devices) | — | — | ✓ |
+| Control class mixing (passive+reactive+planned) | — | — | ✓ |
+| All 7 constraint types | — | — | ✓ |
+| Quirk automations (defrost, legionella, §14a) | — | — | ✓ |
+| 5-minute stability under load | — | — | ✓ |
+| `hemm.replan` after full provisioning | — | — | ✓ |
 
 ---
 

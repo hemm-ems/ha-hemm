@@ -1,0 +1,41 @@
+# Sim house stack — parameterized by HOUSE_NAME and HOUSE_PORT.
+#
+# Usage:
+#   HOUSE_NAME=starter HOUSE_PORT=8130 docker compose -f docker-compose.sim.yml up -d --wait
+#
+# Each house gets its own container, config overlay, and port mapping.
+# hemm custom component and hemm core are volume-mounted from the workspace.
+
+services:
+  homeassistant:
+    image: "ghcr.io/home-assistant/home-assistant:${HA_VERSION:-stable}"
+    container_name: "hemm-sim-${HOUSE_NAME:-default}"
+    volumes:
+      - "ha-sim-config-${HOUSE_NAME:-default}:/config"
+      # HEMM custom component (read-only)
+      - ../../custom_components/hemm:/config/custom_components/hemm:ro
+      # Base HA configuration
+      - ./base_config/configuration.yaml:/config/configuration.yaml:ro
+      - ./base_config/scripts.yaml:/config/scripts.yaml:ro
+      # House-specific automations overlay (if exists)
+      - "./houses/${HOUSE_NAME:-starter}/automations.yaml:/config/automations.yaml:ro"
+      # hemm core source for pip install inside container
+      - ../../../hemm:/hemm-src:ro
+    ports:
+      - "${HOUSE_PORT:-8130}:8123"
+    environment:
+      - TZ=Europe/Berlin
+    healthcheck:
+      test: ["CMD-SHELL", "curl -so /dev/null http://localhost:8123/api/onboarding"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    restart: "no"
+
+volumes:
+  ha-sim-config-starter:
+  ha-sim-config-family:
+  ha-sim-config-comfort:
+  ha-sim-config-villa:
+  ha-sim-config-para14a:

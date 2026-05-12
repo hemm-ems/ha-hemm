@@ -1,0 +1,43 @@
+# House: starter — PV + Battery baseline
+# The simplest possible HEMM house. Validates battery arbitrage against
+# a dynamic price curve with a single min_soc_until constraint.
+# No quirks, both devices planned.
+
+name: starter
+description: "PV + Battery baseline — simplest HEMM house"
+ha_port: 8130
+
+hub:
+  solver_backend: milp_central
+  horizon_hours: 24
+  max_iterations: 50
+  price_adapter: template
+
+devices:
+  - type: pv_forecast
+    tier: beginner
+    config:
+      device_name: "Roof PV"
+      peak_power_kwp: 9.8
+      forecast_adapter: solcast
+    safe_default_script: script.hemm_pv_safe
+
+  - type: battery
+    tier: beginner
+    config:
+      device_name: "House Battery"
+      capacity_kwh: 10.0
+      max_charge_kw: 5.0
+      max_discharge_kw: 5.0
+    safe_default_script: script.hemm_battery_safe
+
+constraints:
+  - window_id: battery_morning_soc
+    device_name: "House Battery"
+    deadline: "07:00"
+    requirement:
+      type: min_soc_until
+      min_soc_pct: 50
+    priority_penalty: 2.0
+
+quirks: []
