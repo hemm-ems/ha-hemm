@@ -17,12 +17,11 @@ services:
       # Base HA configuration
       - ./base_config/configuration.yaml:/config/configuration.yaml:ro
       - ./base_config/scripts.yaml:/config/scripts.yaml:ro
-      # House-specific automations overlay (if exists)
-      - "./houses/${HOUSE_NAME:-starter}/automations.yaml:/config/automations.yaml:ro"
       # hemm core source for pip install inside container
       - ../../../hemm:/hemm-src:ro
     ports:
       - "${HOUSE_PORT:-8130}:8123"
+      - "${COMPANION_PORT:-9130}:9100"
     environment:
       - TZ=Europe/Berlin
     healthcheck:

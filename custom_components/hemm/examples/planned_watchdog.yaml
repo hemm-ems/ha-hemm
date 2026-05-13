@@ -1,0 +1,38 @@
+# Example: Planned Device Watchdog
+#
+# For planned (control_class: planned) devices.  Monitors actual vs.
+# planned power every minute.  If drift exceeds a threshold for too long,
+# calls hemm.replan with device_filter to trigger a scoped re-optimization.
+#
+# Adapt the plan sensor, actual power sensor, device filter, and thresholds
+# to your device (heat pump, battery, pool pump, etc.).
+
+- id: hemm_planned_watchdog
+  alias: "HEMM: Planned Device Watchdog"
+  trigger:
+    - platform: time_pattern
+      minutes: "/1"
+  condition:
+    - condition: not
+      conditions:
+        - condition: state
+          entity_id: sensor.hemm_device_plan
+          state: "unavailable"
+    - condition: not
+      conditions:
+        - condition: state
+          entity_id: sensor.actual_device_power
+          state: "unavailable"
+  action:
+    - variables:
+        planned_kw: "{{ states('sensor.hemm_device_plan') | float(0) }}"
+        actual_kw: "{{ states('sensor.actual_device_power') | float(0) }}"
+        drift_kw: "{{ (actual_kw - planned_kw) | abs }}"
+    - condition: template
+      value_template: "{{ drift_kw > 0.5 }}"
+    - service: hemm.replan
+      data:
+        device_filter:
+          - "My Device"
+  mode: single
+  max_exceeded: silent

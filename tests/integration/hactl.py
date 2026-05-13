@@ -263,6 +263,20 @@ class Hactl:
         """hactl auto show — automation config + traces."""
         return self._run_or_raise(["auto", "show", automation_id])
 
+    def auto_create(self, yaml_path: Path | str, *, confirm: bool = True) -> HactlOutput:
+        """hactl auto create — create an automation from YAML file."""
+        args = ["auto", "create", "-f", str(yaml_path)]
+        if confirm:
+            args.append("--confirm")
+        return self._run_or_raise(args)
+
+    def auto_delete(self, automation_id: str, *, confirm: bool = True) -> HactlOutput:
+        """hactl auto delete — delete an automation."""
+        args = ["auto", "delete", automation_id]
+        if confirm:
+            args.append("--confirm")
+        return self._run_or_raise(args)
+
     # --- Scripts ---
 
     def script_ls(self, *, pattern: str | None = None, label: str | None = None, failing: bool = False) -> HactlOutput:

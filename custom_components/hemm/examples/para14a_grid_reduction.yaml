@@ -1,0 +1,47 @@
+# Example: §14a Grid Reduction (Germany)
+#
+# German §14a EnWG allows grid operators to reduce controllable loads
+# during grid stress.  When the grid-reduction signal goes active,
+# add forbidden_window constraints on both the heat pump and the EV
+# charger simultaneously.  When the signal clears, remove them.
+#
+# Adapt entity IDs, device_filter values, and priority (usually high)
+# to your setup.
+
+- id: hemm_14a_reduction_start
+  alias: "HEMM: §14a Grid Reduction → Lock HP + EV"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.grid_reduction_active
+      to: "on"
+  action:
+    - service: hemm.add_constraint_window
+      data:
+        window_id: "14a_hp_lockout"
+        device_filter: "Main Heat Pump"
+        deadline: "{{ (now() + timedelta(hours=2)) | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
+        requirement_type: "forbidden_window"
+        priority_penalty: 50.0
+        ttl_seconds: 7200
+    - service: hemm.add_constraint_window
+      data:
+        window_id: "14a_ev_lockout"
+        device_filter: "Garage Wallbox"
+        deadline: "{{ (now() + timedelta(hours=2)) | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
+        requirement_type: "forbidden_window"
+        priority_penalty: 50.0
+        ttl_seconds: 7200
+
+- id: hemm_14a_reduction_end
+  alias: "HEMM: §14a Grid Reduction Over → Unlock HP + EV"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.grid_reduction_active
+      to: "off"
+  action:
+    - service: hemm.remove_constraint
+      data:
+        window_id: "14a_hp_lockout"
+    - service: hemm.remove_constraint
+      data:
+        window_id: "14a_ev_lockout"

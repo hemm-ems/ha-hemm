@@ -60,7 +60,7 @@ Every HEMM service accepts `dry_run: true`. The solver runs, produces plans, fir
 
 - Verify a new device config produces sensible plans before going live
 - Test constraint logic (does the EV actually reach 80%?)
-- Monitor optimizer health via the `dry_run_verification` blueprint (runs every 4 hours)
+- Monitor optimizer health via the `dry_run_verification` example automation (runs every 4 hours)
 
 ### 6. Numeric Conflict Resolution
 

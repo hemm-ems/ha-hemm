@@ -12,8 +12,8 @@ default_config:
 # Safe-default and action scripts for all device types
 script: !include scripts.yaml
 
-# House-specific automations (overlaid per house)
-automation: !include automations.yaml
+# Automations are created dynamically via hactl auto create (registry-based).
+# No file-based automation: !include needed.
 
 # Mock entities for simulated sensor states.
 # These input_booleans and input_numbers allow quirk automations to trigger

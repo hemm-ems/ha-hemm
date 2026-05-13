@@ -5,7 +5,8 @@ Workflow:
 2. Complete onboarding
 3. Create HEMM hub via config flow
 4. For each device in house.yaml: 3-step options flow (add_device → select_device → configure_device)
-5. Verify entities exist
+5. Install automations via hactl auto create
+6. Verify entities exist
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -46,11 +48,26 @@ class HouseConfig:
     devices: list[dict[str, Any]]
     constraints: list[dict[str, Any]] = field(default_factory=list)
     quirks: list[dict[str, Any]] = field(default_factory=list)
+    automations: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def companion_port(self) -> int:
+        """Companion port = HA port + 1000 (e.g. 8130 → 9130)."""
+        return self.ha_port + 1000
 
     @classmethod
     def from_yaml(cls, path: Path) -> HouseConfig:
         """Load house config from YAML file."""
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+        # Load automations from sibling automations.yaml if it exists
+        auto_path = path.parent / "automations.yaml"
+        automations: list[dict[str, Any]] = []
+        if auto_path.exists():
+            raw = yaml.safe_load(auto_path.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                automations = raw
+
         return cls(
             name=data["name"],
             description=data["description"],
@@ -59,6 +76,7 @@ class HouseConfig:
             devices=data["devices"],
             constraints=data.get("constraints", []),
             quirks=data.get("quirks", []),
+            automations=automations,
         )
 
 
@@ -283,8 +301,40 @@ def _add_device(hactl: Hactl, entry_id: str, device: dict[str, Any]) -> None:
     _LOGGER.info("Device added: %s ✓", device_name)
 
 
+def _install_automations(hactl: Hactl, house: HouseConfig) -> None:
+    """Create automations via hactl auto create.
+
+    Writes each automation from house.automations to a temp YAML file
+    and calls ``hactl auto create -f <file> --confirm``.
+    """
+    if not house.automations:
+        _LOGGER.info("House %s has no automations to install", house.name)
+        return
+
+    for auto in house.automations:
+        auto_id = auto.get("id", "unknown")
+        _LOGGER.info("Creating automation: %s", auto_id)
+
+        # hactl auto create expects a single-automation YAML file
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".yaml",
+            prefix=f"hemm_auto_{auto_id}_",
+            delete=False,
+            encoding="utf-8",
+        ) as f:
+            yaml.dump(auto, f, default_flow_style=False, allow_unicode=True)
+            tmp_path = Path(f.name)
+
+        try:
+            hactl.auto_create(tmp_path, confirm=True)
+            _LOGGER.info("Automation created: %s ✓", auto_id)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+
 def setup_house(house: HouseConfig, hactl: Hactl) -> None:
-    """Provision a complete house: hub + all devices.
+    """Provision a complete house: hub + all devices + automations.
 
     Call this after HA is healthy + onboarded and hactl is configured.
     """
@@ -297,7 +347,15 @@ def setup_house(house: HouseConfig, hactl: Hactl) -> None:
     for device in house.devices:
         _add_device(hactl, entry_id, device)
 
-    _LOGGER.info("House %s setup complete — %d devices configured", house.name, len(house.devices))
+    # Install automations via hactl
+    _install_automations(hactl, house)
+
+    _LOGGER.info(
+        "House %s setup complete — %d devices, %d automations",
+        house.name,
+        len(house.devices),
+        len(house.automations),
+    )
 
 
 def verify_house(house: HouseConfig, hactl: Hactl) -> dict[str, Any]:
@@ -338,7 +396,6 @@ def full_setup(house: HouseConfig, base_url: str, hactl_binary: Path, bin_dir: P
 
     Returns the configured Hactl instance for further use.
     """
-    import tempfile
 
     _LOGGER.info("=== Full setup for house: %s (port %d) ===", house.name, house.ha_port)
 
@@ -360,7 +417,8 @@ def full_setup(house: HouseConfig, base_url: str, hactl_binary: Path, bin_dir: P
     # Create hactl instance pointing at this house's HA
     hactl_dir = Path(tempfile.mkdtemp(prefix=f"hactl_sim_{house.name}_"))
     env_file = hactl_dir / ".env"
-    env_file.write_text(f"HA_URL={base_url}\nHA_TOKEN={token}\n")
+    companion_url = f"http://127.0.0.1:{house.companion_port}"
+    env_file.write_text(f"HA_URL={base_url}\nHA_TOKEN={token}\nCOMPANION_URL={companion_url}\n")
     hactl = Hactl(binary=hactl_binary, instance_dir=hactl_dir, timeout=60)
 
     # Wait for hactl to connect

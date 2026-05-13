@@ -4,7 +4,7 @@ Verifies the Zeitdynamik-Erweiterung features in a live HA container:
 - control_class field in device configuration
 - reason sensor per device (4 sensors total)
 - device_filter parameter on hemm.replan
-- 6 blueprints discoverable
+- 8 example automations shipped
 """
 
 from __future__ import annotations
@@ -200,17 +200,26 @@ class TestReplanDeviceFilter:
 
 
 @pytest.mark.container
-class TestBlueprintDiscovery:
-    """Verify all 6 blueprints are discoverable."""
+class TestExampleAutomations:
+    """Verify example automations are shipped with the integration."""
 
-    def test_six_blueprints_present(self, hactl: Hactl) -> None:
-        """All 6 HEMM blueprints exist as YAML files in the custom component."""
+    def test_example_automations_present(self, hactl: Hactl) -> None:
+        """All expected example automation YAML files exist."""
         from pathlib import Path
 
-        bp_dir = Path(__file__).parent.parent.parent / "custom_components" / "hemm" / "blueprints"
-        assert bp_dir.is_dir(), f"Blueprint directory not found: {bp_dir}"
+        examples_dir = Path(__file__).parent.parent.parent / "custom_components" / "hemm" / "examples"
+        assert examples_dir.is_dir(), f"Examples directory not found: {examples_dir}"
 
-        bp_files = sorted(p.stem for p in bp_dir.glob("*.yaml"))
-        new_blueprints = ["hemm_passive_meter", "hemm_planned_watchdog", "hemm_reactive_follower"]
-        for bp in new_blueprints:
-            assert bp in bp_files, f"Blueprint '{bp}' not found in {bp_dir}"
+        example_files = sorted(p.stem for p in examples_dir.glob("*.yaml"))
+        expected = [
+            "dry_run_verification",
+            "ev_plug_schedule",
+            "hp_defrost_lockout",
+            "legionella_protection",
+            "para14a_grid_reduction",
+            "passive_meter",
+            "planned_watchdog",
+            "reactive_follower",
+        ]
+        for ex in expected:
+            assert ex in example_files, f"Example '{ex}' not found in {examples_dir}"

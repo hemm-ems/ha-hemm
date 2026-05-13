@@ -95,3 +95,24 @@ class TestSimHouse:
         hemm_entries = [e for e in entries if e.get("domain") == "hemm"]
         # One hub entry exists
         assert len(hemm_entries) >= 1
+
+    @pytest.mark.parametrize("sim_house", _HOUSE_NAMES, indirect=True)
+    def test_automations_created(self, sim_house: tuple[HouseConfig, Hactl]) -> None:
+        """Automations defined in house config are created via hactl."""
+        house, hactl = sim_house
+        if not house.automations:
+            pytest.skip(f"No automations defined for house {house.name}")
+        result = hactl.auto_ls()
+        assert result.success
+        # Verify each expected automation ID appears in the listing
+        auto_data = result.json_data
+        if isinstance(auto_data, list):
+            auto_ids = {a.get("id", a.get("automation_id", "")) for a in auto_data}
+        else:
+            auto_ids = set()
+        for auto in house.automations:
+            expected_id = auto.get("id", "")
+            assert expected_id in auto_ids, (
+                f"Automation '{expected_id}' not found in HA for house {house.name}. "
+                f"Found: {auto_ids}"
+            )

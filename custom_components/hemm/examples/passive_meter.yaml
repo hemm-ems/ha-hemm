@@ -1,0 +1,25 @@
+# Example: Passive Device Meter Mapping
+#
+# For passive (control_class: passive) devices — appliances HEMM monitors
+# but never steers (kettle, oven, instantaneous water heater, etc.).
+#
+# Passive devices require no automation.  This example exists to document
+# the pattern: declare the device as passive in the HEMM config flow,
+# point it at an energy sensor, and HEMM includes the consumption in its
+# planning model without ever actuating the device.
+#
+# If you want notifications when a passive device exceeds a power threshold,
+# create an automation like this and adapt the entity IDs and threshold.
+
+- id: hemm_passive_alert
+  alias: "HEMM: Passive Device High-Power Alert"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.kitchen_loads_power
+      above: 3.0
+  action:
+    - service: notify.persistent_notification
+      data:
+        title: "HEMM: High passive load"
+        message: "Kitchen loads drawing {{ states('sensor.kitchen_loads_power') }} kW."
+  mode: single

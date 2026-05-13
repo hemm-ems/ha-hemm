@@ -37,12 +37,26 @@ Not every device is a battery that HEMM can schedule hours ahead. Real homes hav
 
 Each device declares its `control_class` in the config flow. HEMM creates a **reason sensor** (`sensor.hemm_<device>_reason`) explaining *why* the current setpoint was chosen: `pv_surplus`, `cheap_grid`, `constraint`, `idle`, `manual`, or `safety_default`.
 
-Three reference blueprints ship for the three classes:
-- `hemm_passive_meter` — energy-sensor mapping for passive devices
-- `hemm_reactive_follower` — seconds-interval loop reading setpoints
-- `hemm_planned_watchdog` — drift detection → `hemm.replan` with `device_filter`
-
 The `hemm.replan` service accepts an optional `device_filter` list to re-optimize only specific devices without disturbing the rest of the fleet.
+
+## Example Automations
+
+HEMM ships example automations in `custom_components/hemm/examples/` — not blueprints. In the age of LLMs, parameterized blueprint templates are unnecessary overhead. Instead, describe your house to an LLM and let it generate tailored automations from these examples. Most real setups are a mix of several patterns.
+
+Eight examples cover the common patterns:
+
+| Example | Pattern |
+|---------|---------|
+| `ev_plug_schedule` | EV plug-in → add charging constraint; unplug → remove |
+| `hp_defrost_lockout` | HP defrost sensor → forbidden window; defrost over → remove |
+| `legionella_protection` | Daily time trigger → reach_min_temp_once constraint |
+| `para14a_grid_reduction` | §14a grid signal → simultaneous HP + EV lockout |
+| `dry_run_verification` | Periodic dry-run solver pass + notification |
+| `reactive_follower` | Seconds-interval setpoint loop for reactive devices |
+| `planned_watchdog` | Drift detection → scoped replan for planned devices |
+| `passive_meter` | High-power alert for passive (monitor-only) devices |
+
+Each file is a standard HA automation (id, alias, trigger, action) that you can install directly or adapt. Use `hactl auto create -f <file> --confirm` to deploy, or paste into your `automations.yaml`.
 
 ## Onboarding
 
@@ -67,7 +81,7 @@ ha-hemm uses four test layers:
 
 - **Unit tests** run in-process against `pytest-homeassistant-custom-component`. No Docker required, completes in under 30 seconds.
 - **Container tests** start a real HA instance in Docker, install the integration, and exercise it via the REST API. CI runs these on every push against three HA versions (stable, previous, beta).
-- **Sim house tests** provision complete houses (2–9 devices each) in Docker and verify 5-minute stability. Five house variants cover all 7 device types, all 3 control classes, all 7 constraint types, and real-world quirks (defrost lockout, legionella, EV plug lifecycle, §14a grid reduction).
+- **Sim house tests** provision complete houses (2–9 devices each) in Docker, create automations via `hactl auto create`, and verify 5-minute stability. Five house variants cover all 7 device types, all 3 control classes, all 7 constraint types, and real-world quirks (defrost lockout, legionella, EV plug lifecycle, §14a grid reduction).
 - **Pi tests** (planned) will validate performance on Raspberry Pi hardware under realistic resource constraints.
 
 See [docs/testing.md](docs/testing.md) for how to run each layer locally.

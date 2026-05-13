@@ -1,0 +1,34 @@
+# Example: Heat Pump Defrost Lockout
+#
+# When the HP enters defrost mode (binary_sensor goes on), add a
+# forbidden_window constraint so the optimizer doesn't try to run
+# the compressor during defrost.  When defrost ends, remove it.
+#
+# Adapt entity IDs, device_filter, and priority to your setup.
+
+- id: hemm_hp_defrost_lockout
+  alias: "HEMM: HP Defrost → Forbidden Window"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.hp_defrost_active
+      to: "on"
+  action:
+    - service: hemm.add_constraint_window
+      data:
+        window_id: "hp_defrost_lockout"
+        device_filter: "Main Heat Pump"
+        deadline: "{{ (now() + timedelta(minutes=15)) | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
+        requirement_type: "forbidden_window"
+        priority_penalty: 20.0
+        ttl_seconds: 900
+
+- id: hemm_hp_defrost_clear
+  alias: "HEMM: HP Defrost Over → Remove Forbidden Window"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.hp_defrost_active
+      to: "off"
+  action:
+    - service: hemm.remove_constraint
+      data:
+        window_id: "hp_defrost_lockout"

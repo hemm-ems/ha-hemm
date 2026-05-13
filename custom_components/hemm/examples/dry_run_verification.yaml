@@ -1,0 +1,40 @@
+# Example: Dry-Run Verification
+#
+# Periodically runs hemm.simulate (dry-run) and sends a notification
+# with the result.  Use this to monitor optimizer health without
+# affecting the live plan.
+#
+# Adapt interval, notification service, and message format to your needs.
+
+- id: hemm_dry_run_check
+  alias: "HEMM: Periodic Dry-Run Check"
+  trigger:
+    - platform: time_pattern
+      hours: "/4"
+  action:
+    - service: hemm.simulate
+      data: {}
+    - wait_for_trigger:
+        - platform: event
+          event_type: hemm_dry_run_completed
+      timeout: "00:05:00"
+      continue_on_timeout: true
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ wait.trigger is not none }}"
+          sequence:
+            - service: notify.persistent_notification
+              data:
+                title: "HEMM Dry-Run Result"
+                message: >
+                  Status: {{ wait.trigger.event.data.status }}
+                  Solver: {{ wait.trigger.event.data.solver }}
+                  Solve time: {{ wait.trigger.event.data.solve_time | round(2) }}s
+                  Plans: {{ wait.trigger.event.data.plan_count }}
+      default:
+        - service: notify.persistent_notification
+          data:
+            title: "HEMM Dry-Run Timeout"
+            message: "Dry-run did not complete within 5 minutes. Check HEMM logs."
+  mode: single

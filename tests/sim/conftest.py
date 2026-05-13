@@ -30,6 +30,7 @@ _LOGGER = logging.getLogger(__name__)
 
 COMPOSE_FILE = Path(__file__).parent / "docker-compose.sim.yml"
 BIN_DIR = Path(__file__).parent.parent.parent / ".bin"
+_COMPANION_TOKEN = "sim-test-token-12345"
 
 
 def pytest_collection_modifyitems(items: list) -> None:
@@ -85,6 +86,7 @@ def _start_house_container(house: HouseConfig) -> None:
         **os.environ,
         "HOUSE_NAME": house.name,
         "HOUSE_PORT": str(house.ha_port),
+        "COMPANION_PORT": str(house.companion_port),
     }
 
     _LOGGER.info("Starting container for house: %s (port %d)", house.name, house.ha_port)
@@ -96,13 +98,22 @@ def _start_house_container(house: HouseConfig) -> None:
         timeout=180,
     )
 
-    # Install hemm core inside container
+    # Install hemm core + companion inside container
     container_name = f"hemm-sim-{house.name}"
-    _LOGGER.info("Installing hemm inside %s...", container_name)
+    _LOGGER.info("Installing hemm + companion inside %s...", container_name)
     subprocess.run(
         ["docker", "exec", container_name, "pip", "install", "--quiet", "/hemm-src"],
+        check=True,
         capture_output=True,
-        timeout=120,
+        timeout=300,
+    )
+    subprocess.run(
+        [
+            "docker", "exec", container_name, "pip", "install", "--quiet",
+            "git+https://github.com/swifty99/hactl_companion.git",
+        ],
+        capture_output=True,
+        timeout=300,
     )
 
     # Restart HA to pick up hemm
@@ -112,9 +123,21 @@ def _start_house_container(house: HouseConfig) -> None:
     # Wait for healthy again
     subprocess.run(
         ["docker", "compose", "-f", str(COMPOSE_FILE), "up", "-d", "--wait"],
-        env={**os.environ, "HOUSE_NAME": house.name, "HOUSE_PORT": str(house.ha_port)},
+        env={**os.environ, "HOUSE_NAME": house.name, "HOUSE_PORT": str(house.ha_port), "COMPANION_PORT": str(house.companion_port)},
+        check=True,
         capture_output=True,
-        timeout=180,
+        timeout=300,
+    )
+
+    # Start companion as background process inside container
+    _LOGGER.info("Starting companion inside %s...", container_name)
+    subprocess.run(
+        [
+            "docker", "exec", "-d", container_name, "sh", "-c",
+            f"SUPERVISOR_TOKEN={_COMPANION_TOKEN} python3 -m companion",
+        ],
+        capture_output=True,
+        timeout=30,
     )
 
 
@@ -124,6 +147,7 @@ def _stop_house_container(house: HouseConfig) -> None:
         **os.environ,
         "HOUSE_NAME": house.name,
         "HOUSE_PORT": str(house.ha_port),
+        "COMPANION_PORT": str(house.companion_port),
     }
     _LOGGER.info("Stopping container for house: %s", house.name)
     subprocess.run(
@@ -174,7 +198,8 @@ def sim_house(request: pytest.FixtureRequest, hactl_binary: Path, bin_dir: Path)
         # Create hactl instance
         hactl_dir = Path(tempfile.mkdtemp(prefix=f"hactl_sim_{house.name}_"))
         env_file = hactl_dir / ".env"
-        env_file.write_text(f"HA_URL={base_url}\nHA_TOKEN={token}\n")
+        companion_url = f"http://127.0.0.1:{house.companion_port}"
+        env_file.write_text(f"HA_URL={base_url}\nHA_TOKEN={token}\nCOMPANION_URL={companion_url}\n")
         hactl = Hactl(binary=hactl_binary, instance_dir=hactl_dir, timeout=60)
 
         # Wait for hactl

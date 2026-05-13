@@ -1,0 +1,35 @@
+# Example: Reactive Follower Loop
+#
+# For reactive (control_class: reactive) devices.  Runs a seconds-interval
+# loop that reads the HEMM power setpoint sensor and calls an actuation
+# script to apply it.
+#
+# Adapt the setpoint sensor, actuation script, and interval to your device.
+# The actuation script receives {{ setpoint_kw }} as a variable — implement
+# vendor-specific logic there (wallbox PWM, modulating heating rod, etc.).
+
+- id: hemm_reactive_follower
+  alias: "HEMM: Reactive Follower Loop"
+  trigger:
+    - platform: time_pattern
+      seconds: "/5"
+  condition:
+    - condition: not
+      conditions:
+        - condition: state
+          entity_id: sensor.hemm_device_plan
+          state: "unavailable"
+        - condition: state
+          entity_id: sensor.hemm_device_plan
+          state: "unknown"
+  action:
+    - variables:
+        setpoint_kw: "{{ states('sensor.hemm_device_plan') | float(0) }}"
+    - service: script.turn_on
+      target:
+        entity_id: script.my_actuation_script
+      data:
+        variables:
+          setpoint_kw: "{{ setpoint_kw }}"
+  mode: single
+  max_exceeded: silent

@@ -1,0 +1,24 @@
+# Example: Legionella Protection
+#
+# Daily trigger adds a reach_min_temp_once constraint on the hot water
+# tank so the optimizer heats it to 60 °C at least once per day.
+#
+# Adapt device_filter, target temperature, priority, and trigger time
+# to your setup.
+
+- id: hemm_legionella_daily
+  alias: "HEMM: Daily Legionella Prevention"
+  trigger:
+    - platform: time
+      at: "00:05:00"
+  action:
+    - service: hemm.add_constraint_window
+      data:
+        window_id: "legionella_daily"
+        device_filter: "DHW Tank"
+        deadline: "{{ today_at('23:59') | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
+        requirement_type: "reach_min_temp_once"
+        requirement_params:
+          target_temp_c: 60.0
+        priority_penalty: 10.0
+        ttl_seconds: 86400

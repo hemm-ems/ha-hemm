@@ -6,12 +6,27 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Example Automations** (replaces blueprints):
+  - 8 example automations in `custom_components/hemm/examples/`: ev_plug_schedule, hp_defrost_lockout, legionella_protection, para14a_grid_reduction, dry_run_verification, reactive_follower, planned_watchdog, passive_meter
+  - Standard HA automation format (id, alias, trigger, action) — no blueprint parameterization
+  - Users adapt examples directly or let an LLM generate tailored automations from them
+- **hactl CRUD for automations** (requires hactl v2026.5.3+):
+  - `auto_create` / `auto_delete` methods in hactl wrapper
+  - Sim houses now create automations dynamically via `hactl auto create --confirm`
+  - No more volume-mounted `automations.yaml` in Docker — automations are registry-based
+
+### Removed
+
+- `custom_components/hemm/blueprints/` directory (6 blueprint YAML files)
+- Volume-mounted automations in sim house Docker setup
+
+### Changed
+
 - **Zeitdynamik-Erweiterung (Sonnenproblem)**:
   - `control_class` field in device configuration (`passive` / `reactive` / `planned`, default: `planned`)
   - `sensor.hemm_<device>_reason` — per-device reason sensor (enum: pv_surplus, cheap_grid, constraint, idle, manual, safety_default)
   - 4 sensors per device (was 3): plan, confidence, mode, **reason**
   - `device_filter` parameter on `hemm.replan` service for selective re-optimization
-  - 3 new reference blueprints: `hemm_passive_meter`, `hemm_reactive_follower`, `hemm_planned_watchdog`
   - Container integration tests for all Zeitdynamik features
 - **Sim House Testing Framework**:
   - 5 declarative house variants (starter, family, comfort, villa, para14a) each provisioned in Docker
@@ -19,7 +34,7 @@ All notable changes to this project will be documented in this file.
   - Covers all 7 device types, all 3 control classes, all 7 constraint types
   - Real-world quirk automations: HP defrost lockout, legionella cycle, EV plug lifecycle, §14a grid reduction
   - `make sim-up/sim-setup/sim-down/sim-all/sim-test` lifecycle targets
-  - 35 parametrized pytest tests (7 checks × 5 houses)
+  - 40 parametrized pytest tests (8 checks × 5 houses)
 
 ## [2026.5.0] - 2026-05-11
 
