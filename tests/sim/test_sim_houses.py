@@ -113,6 +113,5 @@ class TestSimHouse:
         for auto in house.automations:
             expected_id = auto.get("id", "")
             assert expected_id in auto_ids, (
-                f"Automation '{expected_id}' not found in HA for house {house.name}. "
-                f"Found: {auto_ids}"
+                f"Automation '{expected_id}' not found in HA for house {house.name}. Found: {auto_ids}"
             )

@@ -109,7 +109,12 @@ def _start_house_container(house: HouseConfig) -> None:
     )
     subprocess.run(
         [
-            "docker", "exec", container_name, "pip", "install", "--quiet",
+            "docker",
+            "exec",
+            container_name,
+            "pip",
+            "install",
+            "--quiet",
             "git+https://github.com/swifty99/hactl_companion.git",
         ],
         capture_output=True,
@@ -123,7 +128,12 @@ def _start_house_container(house: HouseConfig) -> None:
     # Wait for healthy again
     subprocess.run(
         ["docker", "compose", "-f", str(COMPOSE_FILE), "up", "-d", "--wait"],
-        env={**os.environ, "HOUSE_NAME": house.name, "HOUSE_PORT": str(house.ha_port), "COMPANION_PORT": str(house.companion_port)},
+        env={
+            **os.environ,
+            "HOUSE_NAME": house.name,
+            "HOUSE_PORT": str(house.ha_port),
+            "COMPANION_PORT": str(house.companion_port),
+        },
         check=True,
         capture_output=True,
         timeout=300,
@@ -133,7 +143,12 @@ def _start_house_container(house: HouseConfig) -> None:
     _LOGGER.info("Starting companion inside %s...", container_name)
     subprocess.run(
         [
-            "docker", "exec", "-d", container_name, "sh", "-c",
+            "docker",
+            "exec",
+            "-d",
+            container_name,
+            "sh",
+            "-c",
             f"SUPERVISOR_TOKEN={_COMPANION_TOKEN} python3 -m companion",
         ],
         capture_output=True,
