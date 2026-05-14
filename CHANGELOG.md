@@ -35,6 +35,20 @@ All notable changes to this project will be documented in this file.
   - Real-world quirk automations: HP defrost lockout, legionella cycle, EV plug lifecycle, §14a grid reduction
   - `make sim-up/sim-setup/sim-down/sim-all/sim-test` lifecycle targets
   - 40 parametrized pytest tests (8 checks × 5 houses)
+- **Time-warp auto mode (PI controller):** `WARP_SPEED` can now be left empty for
+  adaptive speed — a background PI controller reads cgroup v2 CPU stats and
+  adjusts the warp multiplier to hit a configurable CPU target (default 50%).
+  Speed starts at 1× and ramps to the host's ceiling (up to 1000× on fast hardware).
+  New env knobs: `WARP_CPU_TARGET`, `WARP_KP`, `WARP_KI`, `WARP_SLEW`,
+  `WARP_PI_INTERVAL`, `WARP_SPEED_MIN`, `WARP_SPEED_MAX`.
+- **Speed file sharing:** PI controller writes current speed to `/tmp/.warp_speed`
+  so `docker exec` processes inherit the main process's speed instead of starting at 1×.
+- **Villa stress config:** 14-sensor, 5-automation simulated home
+  (`tests/warp/config/villa.yaml`) for scheduler stress testing under warp.
+- **Warp stress tests:** 8-test suite (`tests/warp/test_warp_stress.py`) measuring
+  peak/sustained speed, scheduler tick rate, clock monotonicity, concurrent exec stability.
+- **CI warp gate:** GitHub Actions `warp-test` job runs smoke tests in both auto and
+  fixed (100×) modes on every push/PR.
 
 ## [2026.5.0] - 2026-05-11
 

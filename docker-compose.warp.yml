@@ -1,0 +1,39 @@
+services:
+  homeassistant:
+    build:
+      context: .
+      dockerfile: Dockerfile.warp
+    image: hemm-ha-warp:local
+    container_name: hemm-ha-warp
+    volumes:
+      - warp-config:/config
+      - ./custom_components/hemm:/config/custom_components/hemm:ro
+      - ./tests/warp/config/${WARP_CONFIG:-configuration.yaml}:/config/configuration.yaml:ro
+      - ../hemm:/hemm-src:ro
+    ports:
+      - "8124:8123"  # +1 from the test stack so warp + container stacks coexist
+    environment:
+      # WARP_SPEED multiplies wall-clock. At x100, 1 wall-second = 100 sim-seconds.
+      # Leave WARP_SPEED empty/unset for auto mode (PI controller adjusts to CPU target).
+      # WARP_START_REAL is the virtual CLOCK_REALTIME anchor (Unix epoch float).
+      # 1778544000 = 2026-05-12 00:00:00 UTC.
+      WARP_SPEED: "${WARP_SPEED:-}"
+      WARP_START_REAL: "${WARP_START_REAL:-1778544000}"
+      WARP_CPU_TARGET: "${WARP_CPU_TARGET:-0.5}"
+      WARP_SPEED_MIN: "${WARP_SPEED_MIN:-1.0}"
+      WARP_SPEED_MAX: "${WARP_SPEED_MAX:-1000.0}"
+      WARP_KP: "${WARP_KP:-10.0}"
+      WARP_KI: "${WARP_KI:-1.0}"
+      WARP_PI_INTERVAL: "${WARP_PI_INTERVAL:-50}"
+      WARP_SLEW: "${WARP_SLEW:-200.0}"
+      TZ: "UTC"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -so /dev/null http://localhost:8123/api/onboarding"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 30s
+    restart: "no"
+
+volumes:
+  warp-config:

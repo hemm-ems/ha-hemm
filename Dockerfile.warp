@@ -1,0 +1,31 @@
+# HEMM time-warp container — runs HA at WARP_SPEED× wall-clock.
+#
+# How:
+#   1. Compile `warp-lib/warp.c` into `libwarp.so` (a tiny LD_PRELOAD shim).
+#      Unlike libfaketime, libwarp scales BOTH the clock reads AND the
+#      sleep/wait timeouts (epoll_wait, poll, nanosleep, ...) — so HA's
+#      asyncio scheduler also ticks at warp speed, not just the visible
+#      `dt_util.utcnow()` value.
+#   2. HA's entrypoint at `/etc/services.d/home-assistant/run` exports
+#      `LD_PRELOAD=/usr/local/lib/libjemalloc.so.2` right before `exec`-ing
+#      Python. We respect the existing `DISABLE_JEMALLOC` env knob so the
+#      entrypoint skips that line, leaving our `ENV LD_PRELOAD` intact.
+#
+# Knobs (set via compose `environment:`):
+#   WARP_SPEED        speed multiplier (default 1.0)
+#   WARP_START_REAL   virtual CLOCK_REALTIME anchor as Unix epoch float
+#   DISABLE_JEMALLOC  must be set (=1) so HA's entrypoint doesn't override LD_PRELOAD
+
+FROM ghcr.io/home-assistant/home-assistant:stable AS build
+
+# Build deps are kept in this stage so the final image stays clean.
+RUN sed -i 's|https://|http://|g' /etc/apk/repositories && \
+    apk add --no-cache --allow-untrusted gcc musl-dev linux-headers
+COPY warp-lib/warp.c /tmp/warp.c
+RUN gcc -O2 -Wall -fPIC -shared -o /tmp/libwarp.so /tmp/warp.c -ldl -lpthread
+
+FROM ghcr.io/home-assistant/home-assistant:stable
+COPY --from=build /tmp/libwarp.so /usr/lib/libwarp.so
+
+ENV LD_PRELOAD=/usr/lib/libwarp.so \
+    DISABLE_JEMALLOC=1
