@@ -23,7 +23,7 @@ from custom_components.hemm.const import (
     CONF_TIER,
     CONF_VOLUME_LITERS,
     ConfigTier,
-    ControlClassHA,
+    ControlClass,
     DeviceType,
 )
 
@@ -315,12 +315,12 @@ async def test_device_configure_includes_control_class(hass: HomeAssistant, init
             CONF_MAX_CHARGE_KW: 5.0,
             CONF_MAX_DISCHARGE_KW: 5.0,
             CONF_SAFE_DEFAULT_SCRIPT: "script.battery_safe",
-            CONF_CONTROL_CLASS: ControlClassHA.REACTIVE,
+            CONF_CONTROL_CLASS: ControlClass.REACTIVE,
         },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     devices = init_integration.data.get("devices", [])
-    assert devices[0][CONF_CONTROL_CLASS] == ControlClassHA.REACTIVE
+    assert devices[0][CONF_CONTROL_CLASS] == ControlClass.REACTIVE
 
 
 @pytest.mark.unit

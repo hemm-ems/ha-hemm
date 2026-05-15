@@ -43,14 +43,8 @@ def _make_device(device_type: str, **overrides) -> dict:
 
 
 # These tests require hemm core to be importable. Skip if not available.
-# We can't use importorskip("hemm.manifest.types") because custom_components/hemm shadows hemm.
-# Instead, try to import the actual package by its full path.
 try:
-    import importlib
-
-    _spec = importlib.util.find_spec("hemm.manifest.types")
-    if _spec is None or (hasattr(_spec, "origin") and _spec.origin and "custom_components" in _spec.origin):
-        pytest.skip("hemm core not importable (shadowed)", allow_module_level=True)
+    import hemm_core.manifest.types  # noqa: F401
 except (ImportError, ModuleNotFoundError):
     pytest.skip("hemm core not importable", allow_module_level=True)
 

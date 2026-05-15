@@ -146,26 +146,21 @@ DEVICE_PRO_SUPPORT: set[str] = {
 }
 
 
-# Control class — mirrors hemm.manifest.types.ControlClass
+# Control class — imported from hemm_core (single source of truth)
 CONF_CONTROL_CLASS = "control_class"
 
+try:
+    from hemm_core.manifest.types import ControlClass
 
-class ControlClassHA(StrEnum):
-    """Control class for device time-dynamics behavior."""
+    DEFAULT_CONTROL_CLASS = ControlClass.PLANNED
+except ImportError:
+    ControlClass = None  # type: ignore[assignment,misc]
+    DEFAULT_CONTROL_CLASS = "planned"  # type: ignore[assignment]
 
-    PASSIVE = "passive"
-    REACTIVE = "reactive"
-    PLANNED = "planned"
+# Plan reason values — imported from hemm_core (single source of truth)
+try:
+    from hemm_core.manifest.messages import PlanReason
 
-
-DEFAULT_CONTROL_CLASS = ControlClassHA.PLANNED
-
-# Plan reason values (mirrors hemm.manifest.messages.PlanReason)
-PLAN_REASONS: list[str] = [
-    "pv_surplus",
-    "cheap_grid",
-    "manual",
-    "safety_default",
-    "constraint",
-    "idle",
-]
+    PLAN_REASONS: list[str] = [r.value for r in PlanReason]
+except ImportError:
+    PLAN_REASONS = ["pv_surplus", "cheap_grid", "manual", "safety_default", "constraint", "idle"]

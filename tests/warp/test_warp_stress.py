@@ -27,9 +27,9 @@ import pytest
 CONTAINER_NAME = "hemm-ha-warp"
 
 # Stress observation windows
-RAMP_WINDOW = 20       # seconds to let PI ramp up
-OBSERVE_WINDOW = 30    # seconds to observe sustained behavior
-SAMPLE_INTERVAL = 2    # seconds between metric samples
+RAMP_WINDOW = 20  # seconds to let PI ramp up
+OBSERVE_WINDOW = 30  # seconds to observe sustained behavior
+SAMPLE_INTERVAL = 2  # seconds between metric samples
 
 
 def _exec(cmd: str) -> str:
@@ -141,9 +141,7 @@ class TestWarpStress:
             assert ratio > 0.3, f"Tick ratio {ratio:.2f} too low — scheduler can't keep up"
         else:
             # At extreme speed, just verify ticks are flowing
-            assert new_ticks >= 3, (
-                f"Only {new_ticks} ticks at {speed:.0f}x — scheduler not warping"
-            )
+            assert new_ticks >= 3, f"Only {new_ticks} ticks at {speed:.0f}x — scheduler not warping"
 
     def test_asyncio_sleep_under_load(self) -> None:
         """asyncio.sleep still scales correctly under villa load."""
@@ -201,9 +199,7 @@ print(json.dumps({
         print(f"  Max delta:       {data['max_delta']:.9f}s")
         print(f"  Mean delta:      {data['mean_delta']:.9f}s")
 
-        assert data["negative_deltas"] == 0, (
-            f"{data['negative_deltas']} non-monotonic clock reads"
-        )
+        assert data["negative_deltas"] == 0, f"{data['negative_deltas']} non-monotonic clock reads"
 
     def test_realtime_clock_consistency(self) -> None:
         """CLOCK_REALTIME and CLOCK_MONOTONIC advance at the same rate."""
@@ -232,28 +228,27 @@ print(json.dumps({
         print(f"  MONOTONIC delta: {data['mono_delta']:.6f}s")
         print(f"  Ratio:           {data['ratio']:.4f} (1.0 = perfect)")
 
-        assert 0.8 <= data["ratio"] <= 1.2, (
-            f"Clock ratio {data['ratio']:.4f} — REALTIME and MONOTONIC diverge"
-        )
+        assert 0.8 <= data["ratio"] <= 1.2, f"Clock ratio {data['ratio']:.4f} — REALTIME and MONOTONIC diverge"
 
     def test_no_ha_errors_under_load(self) -> None:
         """No critical HA errors accumulated during the stress run."""
         logs = _get_container_logs()
 
         # Count different error levels
-        error_lines = [
-            line for line in logs.splitlines()
-            if "ERROR" in line and "homeassistant" in line.lower()
-        ]
+        error_lines = [line for line in logs.splitlines() if "ERROR" in line and "homeassistant" in line.lower()]
         setup_failures = [line for line in logs.splitlines() if "Setup failed" in line]
         # Exclude known harmless errors
         real_errors = [
-            line for line in error_lines
-            if not any(x in line for x in [
-                "warp",
-                "custom_components",
-                "We found a custom integration",
-            ])
+            line
+            for line in error_lines
+            if not any(
+                x in line
+                for x in [
+                    "warp",
+                    "custom_components",
+                    "We found a custom integration",
+                ]
+            )
         ]
 
         print("\n=== HA Error Summary ===")
@@ -265,9 +260,7 @@ print(json.dumps({
             for line in real_errors[:5]:
                 print(f"    {line[:120]}")
 
-        assert len(setup_failures) == 0, (
-            f"{len(setup_failures)} setup failures:\n" + "\n".join(setup_failures[:5])
-        )
+        assert len(setup_failures) == 0, f"{len(setup_failures)} setup failures:\n" + "\n".join(setup_failures[:5])
 
     def test_concurrent_docker_exec(self) -> None:
         """Multiple concurrent docker exec processes don't corrupt state."""
@@ -311,10 +304,7 @@ print(json.dumps({{"id": {i}, "mono": m, "elapsed": time.monotonic() - m}}))
         logs = _get_container_logs()
 
         # Extract all speed values from PI logs
-        pi_speeds = [
-            float(m.group(1))
-            for m in re.finditer(r"\[warp-pi\] speed=([\d.]+)", logs)
-        ]
+        pi_speeds = [float(m.group(1)) for m in re.finditer(r"\[warp-pi\] speed=([\d.]+)", logs)]
 
         ticks = logs.count("villa-heartbeat tick")
 
@@ -328,7 +318,7 @@ print(json.dumps({{"id": {i}, "mono": m, "elapsed": time.monotonic() - m}}))
             print(f"  Mean speed:        {statistics.mean(pi_speeds):.1f}x")
             print(f"  Speed samples:     {len(pi_speeds)}")
         print(f"  Total ticks:       {ticks}")
-        print(f"  Virtual minutes:   ~{ticks} min = ~{ticks/60:.1f} hours")
+        print(f"  Virtual minutes:   ~{ticks} min = ~{ticks / 60:.1f} hours")
         print("=" * 60)
 
         assert speed > 0, "No speed data available"

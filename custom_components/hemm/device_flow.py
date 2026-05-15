@@ -78,7 +78,7 @@ from .const import (
     DEVICE_PRO_SUPPORT,
     FORECAST_ADAPTERS,
     ConfigTier,
-    ControlClassHA,
+    ControlClass,
     DeviceType,
 )
 
@@ -98,7 +98,7 @@ def _entity(domain: str | None = None) -> EntitySelector:
 
 def _safe_default_schema(tier: str) -> dict:
     """Common safe_default fields required for all device types."""
-    control_class_options = [c.value for c in ControlClassHA]
+    control_class_options = [c.value for c in ControlClass]
     schema: dict = {
         vol.Optional(CONF_CONTROL_CLASS, default=DEFAULT_CONTROL_CLASS.value): SelectSelector(
             SelectSelectorConfig(options=control_class_options, mode=SelectSelectorMode.DROPDOWN)

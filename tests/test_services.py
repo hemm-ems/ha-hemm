@@ -2,7 +2,7 @@
 
 Covers:
 - All 8 services (registration, unregistration, dry-run)
-- Constraint lifecycle (add → bump → remove) via mocked hemm core
+- Constraint lifecycle (add → bump → remove) using real hemm_core types
 - Coordinator state transitions and properties
 - Event firing (all 5 types)
 - Nasty type combinations and edge cases
@@ -11,17 +11,14 @@ Covers:
 - Repairs framework
 - Online identification stubs
 
-Note: Tests that exercise constraint/solver services mock hemm core imports
-because custom_components/hemm shadows the core hemm package in the HA test
-framework. Full end-to-end tests run in container tests (tests/integration/).
+Note: With the hemm → hemm_core rename, the custom_components/hemm namespace
+no longer shadows the core package, so we use real types directly.
 """
 
 from __future__ import annotations
 
-import sys
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, ClassVar
+from typing import ClassVar
 from unittest.mock import MagicMock
 
 import pytest
@@ -59,51 +56,13 @@ from custom_components.hemm.const import (
 )
 from custom_components.hemm.coordinator import HemmCoordinator
 
-# ────────────────────── Mock hemm core types ──────────────────────
+# Try importing real hemm_core types — skip constraint tests if unavailable
+try:
+    from hemm_core.constraints import ConstraintWindowManager
 
-
-@dataclass
-class _FakeConstraintWindow:
-    """Minimal ConstraintWindow mock matching hemm.manifest.messages.ConstraintWindow."""
-
-    window_id: str = ""
-    device_id: str = ""
-    deadline: datetime | None = None
-    requirement: Any = None
-    flex_cost_per_hour_early: float = 0.0
-    priority_penalty: float = 1.0
-    ttl_seconds: float | None = None
-    created_at: datetime | None = None
-
-
-class _FakeConstraintManager:
-    """Mock of hemm.constraints.ConstraintWindowManager."""
-
-    def __init__(self) -> None:
-        self._windows: dict[str, Any] = {}
-
-    def add(self, window: Any) -> None:
-        self._windows[window.window_id] = window
-
-    def remove(self, window_id: str) -> Any:
-        return self._windows.pop(window_id, None)
-
-    def get_active(self, now: datetime | None = None) -> list:
-        if now is not None:
-            return [w for w in self._windows.values() if w.deadline and w.deadline > now]
-        return list(self._windows.values())
-
-    def bump_priority(self, window_id: str, new_penalty: float) -> bool:
-        if window_id in self._windows:
-            self._windows[window_id].priority_penalty = new_penalty
-            return True
-        return False
-
-    def expire_old(self, now: datetime) -> list[str]:
-        expired = [wid for wid, w in self._windows.items() if w.deadline and w.deadline <= now]
-        for wid in expired:
-            del self._windows[wid]
-        return expired
+    _HEMM_CORE_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    _HEMM_CORE_AVAILABLE = False
 
 
 # ────────────────────── Fixtures ──────────────────────
@@ -146,37 +105,24 @@ async def init_with_devices(hass: HomeAssistant, mock_config_entry_with_devices:
 
 
 @pytest.fixture
-def hemm_core_mocks(monkeypatch: pytest.MonkeyPatch) -> _FakeConstraintManager:
-    """Mock hemm core imports to bypass custom_components/hemm shadowing.
+def hemm_core_mocks(monkeypatch: pytest.MonkeyPatch) -> ConstraintWindowManager:
+    """Provide a real ConstraintWindowManager for constraint tests.
 
-    Patches:
-    - coordinator._create_constraint_manager → returns _FakeConstraintManager
-    - sys.modules for hemm.manifest, hemm.manifest.messages, hemm.manifest.constraints
-    - services._REQUIREMENT_BUILDERS cache is cleared so it re-initializes with mocks
-
-    Returns the mock constraint manager for assertions.
+    With the hemm → hemm_core rename, shadowing is eliminated and we can
+    use real types directly. We still inject a known manager instance so
+    tests can inspect its state.
     """
-    mgr = _FakeConstraintManager()
+    if not _HEMM_CORE_AVAILABLE:
+        pytest.skip("hemm_core not importable")
+
+    from hemm_core.time import FixedClock
+
+    clock = FixedClock(datetime(2026, 1, 15, 8, 0, tzinfo=UTC))
+    mgr = ConstraintWindowManager(clock=clock)
     monkeypatch.setattr(
         "custom_components.hemm.coordinator._create_constraint_manager",
         lambda _clock: mgr,
     )
-
-    # Mock hemm.manifest and submodules in sys.modules
-    manifest_mock = MagicMock()
-    messages_mock = MagicMock()
-    messages_mock.ConstraintWindow = _FakeConstraintWindow
-    constraints_mock = MagicMock()
-
-    monkeypatch.setitem(sys.modules, "hemm.manifest", manifest_mock)
-    monkeypatch.setitem(sys.modules, "hemm.manifest.messages", messages_mock)
-    monkeypatch.setitem(sys.modules, "hemm.manifest.constraints", constraints_mock)
-
-    # Clear requirement builders cache so it re-initializes with mock classes
-    from custom_components.hemm import services
-
-    services._REQUIREMENT_BUILDERS.clear()
-
     return mgr
 
 
@@ -332,7 +278,7 @@ class TestConstraintLifecycle:
     """Full constraint lifecycle via services with mocked hemm core."""
 
     async def test_add_constraint_fires_event(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         events: list = []
         hass.bus.async_listen(EVENT_CONSTRAINT_ADDED, lambda e: events.append(e))
@@ -357,7 +303,7 @@ class TestConstraintLifecycle:
         assert events[0].data["device_id"] == "room_1"
 
     async def test_add_dry_run_no_side_effect(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         events: list = []
         hass.bus.async_listen(EVENT_CONSTRAINT_ADDED, lambda e: events.append(e))
@@ -380,7 +326,7 @@ class TestConstraintLifecycle:
         assert len(hemm_core_mocks.get_active()) == 0
 
     async def test_remove_fires_event(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         # Add first
         await hass.services.async_call(
@@ -407,7 +353,7 @@ class TestConstraintLifecycle:
         assert events[0].data["window_id"] == "to_remove"
 
     async def test_remove_nonexistent_no_event(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         events: list = []
         hass.bus.async_listen(EVENT_CONSTRAINT_RESOLVED, lambda e: events.append(e))
@@ -418,7 +364,7 @@ class TestConstraintLifecycle:
         assert len(events) == 0
 
     async def test_remove_dry_run_keeps_constraint(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         await hass.services.async_call(
             DOMAIN,
@@ -441,7 +387,7 @@ class TestConstraintLifecycle:
         assert any(w.window_id == "keep_me" for w in hemm_core_mocks.get_active())
 
     async def test_bump_priority(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         await hass.services.async_call(
             DOMAIN,
@@ -451,7 +397,7 @@ class TestConstraintLifecycle:
                 "device_id": "room_1",
                 "deadline": (datetime.now(tz=UTC) + timedelta(hours=3)).isoformat(),
                 "requirement_type": "min_energy_until",
-                "requirement_params": {"min_kwh": 5.0},
+                "requirement_params": {"min_energy_kwh": 5.0},
                 "priority_penalty": 1.0,
             },
             blocking=True,
@@ -468,7 +414,7 @@ class TestConstraintLifecycle:
         assert bumpable[0].priority_penalty == 10.0
 
     async def test_bump_dry_run_no_change(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         await hass.services.async_call(
             DOMAIN,
@@ -504,10 +450,10 @@ class TestAllConstraintTypes:
     """Test adding all 7 constraint types via service call."""
 
     CONSTRAINT_CONFIGS: ClassVar[list[tuple[str, dict]]] = [
-        ("reach_min_temp_once", {"min_temp_c": 60.0}),
+        ("reach_min_temp_once", {"target_temp_c": 60.0}),
         ("hold_temp_band", {"min_temp_c": 20.0, "max_temp_c": 23.0}),
         ("min_soc_until", {"min_soc_pct": 80}),
-        ("min_energy_until", {"min_kwh": 10.0}),
+        ("min_energy_until", {"min_energy_kwh": 10.0}),
         ("forbidden_window", {}),
         ("min_runtime_per_day", {"min_hours": 4.0}),
         ("max_runtime_per_day", {"max_hours": 8.0}),
@@ -522,7 +468,7 @@ class TestAllConstraintTypes:
         self,
         hass: HomeAssistant,
         init_integration: ConfigEntry,
-        hemm_core_mocks: _FakeConstraintManager,
+        hemm_core_mocks: ConstraintWindowManager,
         req_type: str,
         params: dict,
     ) -> None:
@@ -571,14 +517,18 @@ class TestSetPriceCurve:
         await hass.async_block_till_done()
 
         coordinator: HemmCoordinator = hass.data[DOMAIN][init_integration.entry_id]
-        assert not hasattr(coordinator, "_manual_prices") or coordinator._manual_prices == []
+        assert coordinator._manual_prices is None
 
-    async def test_empty_list(self, hass: HomeAssistant, init_integration: ConfigEntry) -> None:
+    async def test_empty_list_clears(self, hass: HomeAssistant, init_integration: ConfigEntry) -> None:
+        """Empty list clears manual override (reverts to adapter)."""
+        # First set prices
+        await hass.services.async_call(DOMAIN, SERVICE_SET_PRICE_CURVE, {"prices": [0.42]}, blocking=True)
+        # Then clear
         await hass.services.async_call(DOMAIN, SERVICE_SET_PRICE_CURVE, {"prices": []}, blocking=True)
         await hass.async_block_till_done()
 
         coordinator: HemmCoordinator = hass.data[DOMAIN][init_integration.entry_id]
-        assert coordinator._manual_prices == []
+        assert coordinator._manual_prices is None
 
     async def test_single_value(self, hass: HomeAssistant, init_integration: ConfigEntry) -> None:
         await hass.services.async_call(DOMAIN, SERVICE_SET_PRICE_CURVE, {"prices": [0.42]}, blocking=True)
@@ -595,27 +545,45 @@ class TestSetPriceCurve:
 class TestNastyTypeCombinations:
     """Edge cases and tricky type/value combinations."""
 
-    async def test_zero_penalty(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+    async def test_zero_penalty_rejected(
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
+    ) -> None:
+        """Zero priority_penalty is rejected by the core model (gt=0)."""
+        with pytest.raises(Exception):  # noqa: B017 — ValidationError wrapped by HA
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_ADD_CONSTRAINT,
+                {
+                    "window_id": "zero_pen",
+                    "device_id": "dev",
+                    "deadline": (datetime.now(tz=UTC) + timedelta(hours=1)).isoformat(),
+                    "requirement_type": "forbidden_window",
+                    "priority_penalty": 0.0,
+                },
+                blocking=True,
+            )
+
+    async def test_small_positive_penalty(
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         await hass.services.async_call(
             DOMAIN,
             SERVICE_ADD_CONSTRAINT,
             {
-                "window_id": "zero_pen",
+                "window_id": "small_pen",
                 "device_id": "dev",
                 "deadline": (datetime.now(tz=UTC) + timedelta(hours=1)).isoformat(),
                 "requirement_type": "forbidden_window",
-                "priority_penalty": 0.0,
+                "priority_penalty": 0.01,
             },
             blocking=True,
         )
         await hass.async_block_till_done()
 
-        assert any(w.window_id == "zero_pen" for w in hemm_core_mocks.get_active())
+        assert any(w.window_id == "small_pen" for w in hemm_core_mocks.get_active())
 
     async def test_very_large_penalty(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         await hass.services.async_call(
             DOMAIN,
@@ -634,28 +602,27 @@ class TestNastyTypeCombinations:
         big = [w for w in hemm_core_mocks.get_active() if w.window_id == "big_pen"]
         assert big[0].priority_penalty == 999999.99
 
-    async def test_negative_flex_cost(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+    async def test_negative_flex_cost_rejected(
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
-        await hass.services.async_call(
-            DOMAIN,
-            SERVICE_ADD_CONSTRAINT,
-            {
-                "window_id": "neg_flex",
-                "device_id": "dev",
-                "deadline": (datetime.now(tz=UTC) + timedelta(hours=1)).isoformat(),
-                "requirement_type": "min_energy_until",
-                "requirement_params": {"min_kwh": 5.0},
-                "flex_cost_per_hour_early": -1.0,
-            },
-            blocking=True,
-        )
-        await hass.async_block_till_done()
-
-        assert any(w.window_id == "neg_flex" for w in hemm_core_mocks.get_active())
+        """Negative flex_cost_per_hour_early is rejected by the core model (ge=0)."""
+        with pytest.raises(Exception):  # noqa: B017 — ValidationError wrapped by HA
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_ADD_CONSTRAINT,
+                {
+                    "window_id": "neg_flex",
+                    "device_id": "dev",
+                    "deadline": (datetime.now(tz=UTC) + timedelta(hours=1)).isoformat(),
+                    "requirement_type": "min_energy_until",
+                    "requirement_params": {"min_energy_kwh": 5.0},
+                    "flex_cost_per_hour_early": -1.0,
+                },
+                blocking=True,
+            )
 
     async def test_multiple_constraints_same_device(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         for i in range(3):
             await hass.services.async_call(
@@ -697,7 +664,7 @@ class TestNastyTypeCombinations:
         assert coordinator._manual_prices[2] == 12.00
 
     async def test_constraint_with_ttl(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         await hass.services.async_call(
             DOMAIN,
@@ -716,7 +683,7 @@ class TestNastyTypeCombinations:
         assert any(w.window_id == "ttl_test" for w in hemm_core_mocks.get_active())
 
     async def test_far_future_deadline(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         far_future = (datetime.now(tz=UTC) + timedelta(days=365)).isoformat()
         await hass.services.async_call(
@@ -735,7 +702,7 @@ class TestNastyTypeCombinations:
         assert any(w.window_id == "far_future" for w in hemm_core_mocks.get_active())
 
     async def test_rapid_add_remove_cycle(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         """Add and immediately remove — no stale state."""
         for i in range(5):
@@ -766,7 +733,7 @@ class TestEventFiring:
     """Verify all 5 event types fire correctly."""
 
     async def test_constraint_added_event_data(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         events: list = []
         hass.bus.async_listen(EVENT_CONSTRAINT_ADDED, lambda e: events.append(e))
@@ -798,7 +765,7 @@ class TestEventFiring:
         assert events[0].data["new_backend"] == "distributed"
 
     async def test_constraint_resolved_event_data(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         # Add then remove
         await hass.services.async_call(
@@ -860,7 +827,7 @@ class TestDiagnosticsExtended:
         assert diag["config_entry"]["title"] == "HEMM"
 
     async def test_after_constraint_added(
-        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: _FakeConstraintManager
+        self, hass: HomeAssistant, init_integration: ConfigEntry, hemm_core_mocks: ConstraintWindowManager
     ) -> None:
         from custom_components.hemm.diagnostics import async_get_config_entry_diagnostics
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import deque
 from datetime import datetime, timedelta
@@ -32,15 +33,15 @@ from .manifest_builder import build_all_manifests
 from .time import HAClock
 
 if TYPE_CHECKING:
-    from hemm.constraints import ConstraintWindowManager
-    from hemm.manifest.messages import ConstraintWindow, PlanMessage
-    from hemm.solvers.protocol import SolverResult
-    from hemm.time import Clock
+    from hemm_core.constraints import ConstraintWindowManager
+    from hemm_core.manifest.messages import ConstraintWindow, PlanMessage
+    from hemm_core.solvers.protocol import SolverResult
+    from hemm_core.time import Clock
 
 # Check if hemm core solvers are available (they may not be during unit tests
 # where custom_components/hemm shadows the core hemm package)
 try:
-    import hemm.solvers.protocol  # noqa: F401
+    import hemm_core.solvers.protocol  # noqa: F401
 
     _HEMM_CORE_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
@@ -49,14 +50,15 @@ except (ImportError, ModuleNotFoundError):
 _LOGGER = logging.getLogger(__name__)
 
 UPDATE_INTERVAL = timedelta(minutes=15)
+SOLVER_TIMEOUT_SECONDS = UPDATE_INTERVAL.total_seconds() - 30
 MAX_HISTORY = 20
 
 
 def _create_constraint_manager(clock: Clock) -> ConstraintWindowManager:
     """Create a ConstraintWindowManager (deferred import)."""
-    import hemm.constraints
+    import hemm_core.constraints
 
-    return hemm.constraints.ConstraintWindowManager(clock=clock)
+    return hemm_core.constraints.ConstraintWindowManager(clock=clock)
 
 
 class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -106,6 +108,11 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._dry_run_log: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
         self._id_results: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
 
+        # Manual price override (set via hemm.set_price_curve service)
+        self._manual_prices: list[float] | None = None
+        self._manual_price_resolution: int = 15
+        self._currently_solving: bool = False
+
     @property
     def horizon_hours(self) -> int:
         """Return optimization horizon in hours."""
@@ -151,18 +158,26 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _get_solver(self) -> Any:
         """Create a solver instance for the active backend."""
         if self._solver_backend == "distributed":
-            from hemm.solvers.distributed import DistributedSolver
+            from hemm_core.solvers.distributed import DistributedSolver
 
             return DistributedSolver(max_iterations=self._max_iterations, clock=self._clock)
 
-        from hemm.solvers.milp_central import MILPCentralSolver
+        from hemm_core.solvers.milp_central import MILPCentralSolver
 
         return MILPCentralSolver(clock=self._clock)
 
     def _get_price_forecast(self) -> list[tuple[datetime, float]]:
-        """Fetch price forecast from the configured adapter."""
+        """Fetch price forecast from manual override or configured adapter."""
+        now = self._clock.now()
+
+        # Prefer manual prices set via hemm.set_price_curve
+        if self._manual_prices is not None:
+            res_min = self._manual_price_resolution
+            _LOGGER.info("Using manual price curve (%d slots, %d min resolution)", len(self._manual_prices), res_min)
+            return [(now + timedelta(minutes=i * res_min), p) for i, p in enumerate(self._manual_prices)]
+
         try:
-            from hemm.adapters.registry import get_registry
+            from hemm_core.adapters.registry import get_registry
 
             registry = get_registry()
             adapter = registry.get(self._price_adapter)
@@ -170,7 +185,6 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return [(p.timestamp, p.value) for p in points]
         except Exception:
             _LOGGER.warning("Price adapter '%s' failed, using flat price", self._price_adapter)
-            now = self._clock.now()
             return [(now + timedelta(minutes=i * 15), 0.30) for i in range(self._horizon_hours * 4)]
 
     def switch_solver(self, backend: str) -> None:
@@ -215,7 +229,21 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Returns:
             The solver result.
         """
-        from hemm.solvers.protocol import SolverResult, SolverStatus
+        from hemm_core.solvers.protocol import SolverResult, SolverStatus
+
+        if self._currently_solving:
+            _LOGGER.debug("Solver already running, skipping")
+            return self._last_result or SolverResult(status=SolverStatus.OPTIMAL)
+
+        self._currently_solving = True
+        try:
+            return await self._do_solve(dry_run=dry_run, device_filter=device_filter)
+        finally:
+            self._currently_solving = False
+
+    async def _do_solve(self, *, dry_run: bool = False, device_filter: list[str] | None = None) -> Any:
+        """Internal solver execution (no re-entrancy guard)."""
+        from hemm_core.solvers.protocol import SolverResult, SolverStatus
 
         devices: list[dict[str, Any]] = self.config_entry.data.get("devices", [])
         if not devices:
@@ -330,14 +358,31 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return results
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data — returns current config and cached solver results.
+        """Fetch data — runs solver if devices are configured, then returns results.
 
-        This method must be fast and never block on solver execution.
-        The solver is run separately via services or scheduled tasks.
+        Called by DataUpdateCoordinator on the 15-min schedule and on
+        async_request_refresh().  Guards against re-entrancy so overlapping
+        ticks are harmless.
         """
         devices: list[dict[str, Any]] = self.config_entry.data.get("devices", [])
 
-        # Build device_plans from cached solver result or stubs
+        # Run solver if devices exist and core is available
+        if devices and _HEMM_CORE_AVAILABLE:
+            try:
+                await asyncio.wait_for(
+                    self.async_run_solver(dry_run=False),
+                    timeout=SOLVER_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                _LOGGER.error("Solver timed out after %s s", SOLVER_TIMEOUT_SECONDS)
+            except Exception:
+                _LOGGER.exception("Solver run failed")
+
+        return self._build_data()
+
+    def _build_data(self) -> dict[str, Any]:
+        """Build the coordinator data dict from current cached state."""
+        devices: list[dict[str, Any]] = self.config_entry.data.get("devices", [])
         device_plans: dict[str, dict[str, Any]] = {}
         last_status = "idle"
         last_solve_time = 0.0
@@ -345,7 +390,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if self._last_result is not None and _HEMM_CORE_AVAILABLE:
             try:
-                from hemm.solvers.protocol import SolverStatus
+                from hemm_core.solvers.protocol import SolverStatus
 
                 result = self._last_result
                 last_status = result.status.value
@@ -363,7 +408,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                 "power_kw": slot.power_kw,
                                 "confidence_pct": 95.0 if result.status == SolverStatus.OPTIMAL else 70.0,
                                 "mode": slot.mode or "active",
-                                "reason": slot.reason if hasattr(slot, "reason") else "idle",
+                                "reason": slot.reason.value if slot.reason else "idle",
                             }
                         else:
                             device_plans[device_id] = {

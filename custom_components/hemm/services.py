@@ -35,7 +35,7 @@ def _init_requirement_builders() -> None:
     """Lazily init the requirement builders."""
     if _REQUIREMENT_BUILDERS:
         return
-    from hemm.manifest.constraints import (
+    from hemm_core.manifest.constraints import (
         ForbiddenWindow,
         HoldTempBand,
         MaxRuntimePerDay,
@@ -156,7 +156,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
         _LOGGER.info("hemm.replan called (dry_run=%s, device_filter=%s)", dry_run, device_filter)
         result = await coordinator.async_run_solver(dry_run=dry_run, device_filter=device_filter)
         if not dry_run:
-            await coordinator.async_request_refresh()
+            coordinator.async_set_updated_data(coordinator._build_data())
         _LOGGER.info("Replan complete: status=%s, time=%.2fs", result.status, result.solve_time_seconds)
 
     async def handle_simulate(call: ServiceCall) -> None:
@@ -172,9 +172,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
         dry_run = call.data.get(ATTR_DRY_RUN, False)
         _LOGGER.info("hemm.set_price_curve called (dry_run=%s)", dry_run)
         if not dry_run:
-            # Store the manual price curve for next solver run
-            # The coordinator will use it instead of fetching from adapter
-            coordinator._manual_prices = call.data.get("prices", [])
+            prices = call.data.get("prices", [])
+            coordinator._manual_prices = prices if prices else None
             coordinator._manual_price_resolution = call.data.get("resolution_minutes", 15)
 
     async def handle_set_solver(call: ServiceCall) -> None:
@@ -188,7 +187,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
 
     async def handle_add_constraint(call: ServiceCall) -> None:
         """Handle hemm.add_constraint_window service call."""
-        from hemm.manifest.messages import ConstraintWindow
+        from hemm_core.manifest.messages import ConstraintWindow
 
         coordinator = _get_coordinator(hass)
         dry_run = call.data.get(ATTR_DRY_RUN, False)

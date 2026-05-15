@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from hemm.manifest.types import DeviceManifest
+    from hemm_core.manifest.types import DeviceManifest
 
 from .const import (
     CONF_AZIMUTH_DEG,
     CONF_BATTERY_CAPACITY_KWH,
     CONF_CAPACITY_KWH,
     CONF_CHARGE_EFFICIENCY,
+    CONF_CONTROL_CLASS,
     CONF_DEFROST_LOCKOUT_MIN,
     CONF_DEVICE_NAME,
     CONF_DEVICE_TYPE,
@@ -56,7 +57,7 @@ from .const import (
 
 def _build_safe_default(device: dict[str, Any]) -> Any:
     """Build a safe default Action from device config."""
-    from hemm.manifest.types import Action, VerificationContract
+    from hemm_core.manifest.types import Action, VerificationContract
 
     verify = None
     if device.get(CONF_SAFE_DEFAULT_VERIFY_ENTITY):
@@ -87,6 +88,7 @@ def build_manifest(device: dict[str, Any]) -> DeviceManifest:
     device_id = device["id"]
     name = device.get(CONF_DEVICE_NAME, "Unknown")
     safe_default = _build_safe_default(device)
+    control_class = device.get(CONF_CONTROL_CLASS)
 
     builders = {
         DeviceType.ROOM: _build_room,
@@ -104,7 +106,7 @@ def build_manifest(device: dict[str, Any]) -> DeviceManifest:
         msg = f"Unknown device type: {device_type}"
         raise ValueError(msg)
 
-    return builder(device_id, name, safe_default, device)
+    return builder(device_id, name, safe_default, device, control_class=control_class)
 
 
 def build_all_manifests(devices: list[dict[str, Any]]) -> list[Any]:
@@ -112,13 +114,16 @@ def build_all_manifests(devices: list[dict[str, Any]]) -> list[Any]:
     return [build_manifest(d) for d in devices]
 
 
-def _build_room(device_id: str, name: str, safe_default: Any, cfg: dict[str, Any]) -> Any:
-    from hemm.manifest.types import RoomManifest
+def _build_room(
+    device_id: str, name: str, safe_default: Any, cfg: dict[str, Any], *, control_class: str | None = None
+) -> Any:
+    from hemm_core.manifest.types import RoomManifest
 
     return RoomManifest(
         device_id=device_id,
         name=name,
         safe_default=safe_default,
+        **({"control_class": control_class} if control_class else {}),
         floor_area_m2=cfg[CONF_FLOOR_AREA_M2],
         insulation_class=cfg.get(CONF_INSULATION_CLASS),
         thermal_mass_kwh_per_k=cfg.get(CONF_THERMAL_MASS),
@@ -128,25 +133,31 @@ def _build_room(device_id: str, name: str, safe_default: Any, cfg: dict[str, Any
     )
 
 
-def _build_thermostat_load(device_id: str, name: str, safe_default: Any, cfg: dict[str, Any]) -> Any:
-    from hemm.manifest.types import ThermostatLoadManifest
+def _build_thermostat_load(
+    device_id: str, name: str, safe_default: Any, cfg: dict[str, Any], *, control_class: str | None = None
+) -> Any:
+    from hemm_core.manifest.types import ThermostatLoadManifest
 
     return ThermostatLoadManifest(
         device_id=device_id,
         name=name,
         safe_default=safe_default,
+        **({"control_class": control_class} if control_class else {}),
         max_power_kw=cfg[CONF_MAX_POWER_KW],
         hysteresis_k=cfg.get(CONF_HYSTERESIS_K, 0.5),
     )
 
 
-def _build_heat_pump(device_id: str, name: str, safe_default: Any, cfg: dict[str, Any]) -> Any:
-    from hemm.manifest.types import HeatPumpManifest
+def _build_heat_pump(
+    device_id: str, name: str, safe_default: Any, cfg: dict[str, Any], *, control_class: str | None = None
+) -> Any:
+    from hemm_core.manifest.types import HeatPumpManifest
 
     return HeatPumpManifest(
         device_id=device_id,
         name=name,
         safe_default=safe_default,
+        **({"control_class": control_class} if control_class else {}),
         max_power_kw=cfg[CONF_MAX_POWER_KW],
         vendor_model=cfg.get(CONF_VENDOR_MODEL),
         min_modulation_pct=cfg.get(CONF_MIN_MODULATION_PCT, 0),
@@ -156,13 +167,16 @@ def _build_heat_pump(device_id: str, name: str, safe_default: Any, cfg: dict[str
     )
 
 
-def _build_water_heater(device_id: str, name: str, safe_default: Any, cfg: dict[str, Any]) -> Any:
-    from hemm.manifest.types import WaterHeaterManifest
+def _build_water_heater(
+    device_id: str, name: str, safe_default: Any, cfg: dict[str, Any], *, control_class: str | None = None
+) -> Any:
+    from hemm_core.manifest.types import WaterHeaterManifest
 
     return WaterHeaterManifest(
         device_id=device_id,
         name=name,
         safe_default=safe_default,
+        **({"control_class": control_class} if control_class else {}),
         volume_liters=cfg[CONF_VOLUME_LITERS],
         max_power_kw=cfg[CONF_MAX_POWER_KW],
         standby_loss_w=cfg.get(CONF_STANDBY_LOSS_W, 50),
@@ -171,13 +185,16 @@ def _build_water_heater(device_id: str, name: str, safe_default: Any, cfg: dict[
     )
 
 
-def _build_battery(device_id: str, name: str, safe_default: Any, cfg: dict[str, Any]) -> Any:
-    from hemm.manifest.types import BatteryManifest
+def _build_battery(
+    device_id: str, name: str, safe_default: Any, cfg: dict[str, Any], *, control_class: str | None = None
+) -> Any:
+    from hemm_core.manifest.types import BatteryManifest
 
     return BatteryManifest(
         device_id=device_id,
         name=name,
         safe_default=safe_default,
+        **({"control_class": control_class} if control_class else {}),
         capacity_kwh=cfg[CONF_CAPACITY_KWH],
         max_charge_kw=cfg[CONF_MAX_CHARGE_KW],
         max_discharge_kw=cfg[CONF_MAX_DISCHARGE_KW],
@@ -188,13 +205,16 @@ def _build_battery(device_id: str, name: str, safe_default: Any, cfg: dict[str, 
     )
 
 
-def _build_pv_forecast(device_id: str, name: str, safe_default: Any, cfg: dict[str, Any]) -> Any:
-    from hemm.manifest.types import PVForecastManifest
+def _build_pv_forecast(
+    device_id: str, name: str, safe_default: Any, cfg: dict[str, Any], *, control_class: str | None = None
+) -> Any:
+    from hemm_core.manifest.types import PVForecastManifest
 
     return PVForecastManifest(
         device_id=device_id,
         name=name,
         safe_default=safe_default,
+        **({"control_class": control_class} if control_class else {}),
         peak_power_kwp=cfg[CONF_PEAK_POWER_KWP],
         source_kind=cfg.get(CONF_SOURCE_KIND, "pv"),
         azimuth_deg=cfg.get(CONF_AZIMUTH_DEG, 180),
@@ -204,13 +224,16 @@ def _build_pv_forecast(device_id: str, name: str, safe_default: Any, cfg: dict[s
     )
 
 
-def _build_ev_charger(device_id: str, name: str, safe_default: Any, cfg: dict[str, Any]) -> Any:
-    from hemm.manifest.types import EVChargerManifest
+def _build_ev_charger(
+    device_id: str, name: str, safe_default: Any, cfg: dict[str, Any], *, control_class: str | None = None
+) -> Any:
+    from hemm_core.manifest.types import EVChargerManifest
 
     return EVChargerManifest(
         device_id=device_id,
         name=name,
         safe_default=safe_default,
+        **({"control_class": control_class} if control_class else {}),
         max_charge_kw=cfg[CONF_MAX_CHARGE_KW],
         min_charge_kw=cfg.get(CONF_MIN_CHARGE_KW, 0),
         phases=cfg.get(CONF_PHASES, 3),
@@ -220,13 +243,16 @@ def _build_ev_charger(device_id: str, name: str, safe_default: Any, cfg: dict[st
     )
 
 
-def _build_passive_load(device_id: str, name: str, safe_default: Any, cfg: dict[str, Any]) -> Any:
-    from hemm.manifest.types import PassiveLoadManifest
+def _build_passive_load(
+    device_id: str, name: str, safe_default: Any, cfg: dict[str, Any], *, control_class: str | None = None
+) -> Any:
+    from hemm_core.manifest.types import PassiveLoadManifest
 
     return PassiveLoadManifest(
         device_id=device_id,
         name=name,
         safe_default=safe_default,
+        **({"control_class": control_class} if control_class else {}),
         typical_daily_kwh=cfg[CONF_TYPICAL_DAILY_KWH],
         load_profile_entity=cfg.get(CONF_LOAD_PROFILE_ENTITY),
     )
