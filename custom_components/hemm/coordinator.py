@@ -358,27 +358,33 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return results
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data — runs solver if devices are configured, then returns results.
+        """Fetch data — schedules solver as a background task and returns immediately.
 
         Called by DataUpdateCoordinator on the 15-min schedule and on
-        async_request_refresh().  Guards against re-entrancy so overlapping
-        ticks are harmless.
+        async_request_refresh().  The solver runs asynchronously so that
+        async_config_entry_first_refresh() does not block setup.  Overlapping
+        solver runs are prevented by the _currently_solving re-entrancy guard.
         """
         devices: list[dict[str, Any]] = self.config_entry.data.get("devices", [])
 
-        # Run solver if devices exist and core is available
-        if devices and _HEMM_CORE_AVAILABLE:
-            try:
-                await asyncio.wait_for(
-                    self.async_run_solver(dry_run=False),
-                    timeout=SOLVER_TIMEOUT_SECONDS,
-                )
-            except TimeoutError:
-                _LOGGER.error("Solver timed out after %s s", SOLVER_TIMEOUT_SECONDS)
-            except Exception:
-                _LOGGER.exception("Solver run failed")
+        # Schedule solver as a non-blocking background task
+        if devices and _HEMM_CORE_AVAILABLE and not self._currently_solving:
+            self.hass.async_create_task(self._run_solver_background())
 
         return self._build_data()
+
+    async def _run_solver_background(self) -> None:
+        """Run solver in background and notify listeners when done."""
+        try:
+            await asyncio.wait_for(
+                self.async_run_solver(dry_run=False),
+                timeout=SOLVER_TIMEOUT_SECONDS,
+            )
+            self.async_set_updated_data(self._build_data())
+        except TimeoutError:
+            _LOGGER.error("Solver timed out after %s s", SOLVER_TIMEOUT_SECONDS)
+        except Exception:
+            _LOGGER.exception("Solver run failed")
 
     def _build_data(self) -> dict[str, Any]:
         """Build the coordinator data dict from current cached state."""

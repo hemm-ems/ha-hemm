@@ -82,7 +82,7 @@ class TestAutoSolve:
     """Coordinator auto-solve: _async_update_data triggers solver."""
 
     async def test_update_data_runs_solver(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
-        """Two refresh cycles produce iteration_count == 2."""
+        """Two refresh cycles produce iteration_count == 2 (background tasks)."""
         coordinator: HemmCoordinator = hass.data[DOMAIN][init_with_devices.entry_id]
         call_count = 0
 
@@ -94,9 +94,11 @@ class TestAutoSolve:
         coordinator.async_run_solver = _fake_solver  # type: ignore[assignment]
 
         await coordinator.async_refresh()
+        await hass.async_block_till_done()  # let background solver task run
         first = call_count
 
         await coordinator.async_refresh()
+        await hass.async_block_till_done()  # let background solver task run
         assert call_count == first + 1, "Each refresh should trigger one solve"
 
     async def test_reentrancy_guard(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
@@ -129,7 +131,7 @@ class TestAutoSolve:
         await task1
 
     async def test_solver_timeout(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
-        """A runaway solver is cancelled by the timeout guard."""
+        """A runaway solver is cancelled by the timeout in _run_solver_background."""
         coordinator: HemmCoordinator = hass.data[DOMAIN][init_with_devices.entry_id]
 
         async def _hang_forever(*, dry_run=False, device_filter=None):
@@ -140,8 +142,11 @@ class TestAutoSolve:
 
         # Patch the timeout to something short for the test
         with patch("custom_components.hemm.coordinator.SOLVER_TIMEOUT_SECONDS", 0.1):
-            # Should not hang — timeout catches it
+            # _async_update_data returns immediately (solver runs in background)
             data = await coordinator._async_update_data()
+            # Let the background task run and hit the timeout
+            await asyncio.sleep(0.2)
+            await hass.async_block_till_done()
 
         assert data["last_status"] in ("idle", "error")
 
