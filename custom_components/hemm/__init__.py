@@ -25,7 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     coordinator = HemmCoordinator(hass, entry)
-    await coordinator.async_config_entry_first_refresh()
+    coordinator.async_set_updated_data(coordinator._build_data())
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
 

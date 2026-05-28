@@ -36,3 +36,12 @@ def test_control_class_imported_from_core() -> None:
     from custom_components.hemm.const import ControlClass
 
     assert ControlClass is _types.ControlClass
+
+
+def test_core_occupants_package_importable() -> None:
+    """The integration test environment installs a core build with sim occupants."""
+    import importlib
+
+    occupants = importlib.import_module("hemm_core.sim.occupants")
+
+    assert occupants.HouseholdProfile is not None

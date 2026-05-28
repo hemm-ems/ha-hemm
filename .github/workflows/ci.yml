@@ -13,6 +13,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  HEMM_CORE_REF: ${{ github.head_ref || github.ref_name }}
+
 jobs:
   lint:
     name: Lint
@@ -63,8 +66,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Install hemm core (from GitHub)
-        run: uv pip install git+https://github.com/swifty99/hemm.git
+      - name: Install hemm core (matching branch if available)
+        run: |
+          if git ls-remote --exit-code --heads https://github.com/swifty99/hemm.git "$HEMM_CORE_REF" >/dev/null 2>&1; then
+            uv pip install "git+https://github.com/swifty99/hemm.git@${HEMM_CORE_REF}"
+          else
+            uv pip install git+https://github.com/swifty99/hemm.git@main
+          fi
 
       - name: Test
         run: uv run pytest --cov=custom_components/hemm --cov-report=term-missing
@@ -104,7 +112,11 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --extra dev
-          uv pip install git+https://github.com/swifty99/hemm.git
+          if git ls-remote --exit-code --heads https://github.com/swifty99/hemm.git "$HEMM_CORE_REF" >/dev/null 2>&1; then
+            uv pip install "git+https://github.com/swifty99/hemm.git@${HEMM_CORE_REF}"
+          else
+            uv pip install git+https://github.com/swifty99/hemm.git@main
+          fi
 
       - name: Compute HA image tag
         id: image
@@ -127,8 +139,16 @@ jobs:
 
       - name: Install hemm + companion inside container
         run: |
-          docker exec hemm-ha-test pip install --quiet git+https://github.com/swifty99/hemm.git
+          if git ls-remote --exit-code --heads https://github.com/swifty99/hemm.git "$HEMM_CORE_REF" >/dev/null 2>&1; then
+            core_url="git+https://github.com/swifty99/hemm.git@${HEMM_CORE_REF}"
+          else
+            core_url="git+https://github.com/swifty99/hemm.git@main"
+          fi
+          docker exec hemm-ha-test pip install --quiet "$core_url"
           docker exec hemm-ha-test pip install --quiet git+https://github.com/swifty99/hactl_companion.git
+
+      - name: Occupants core smoke inside container
+        run: docker exec hemm-ha-test python -c "import hemm_core.sim.occupants"
 
       - name: Restart HA to load hemm
         run: |
