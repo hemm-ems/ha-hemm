@@ -169,6 +169,7 @@ class TestServiceRegistration:
 class TestCoordinatorBasics:
     """Core coordinator properties and state."""
 
+    @pytest.mark.req("008:FR-001")
     async def test_initial_state(self, hass: HomeAssistant, init_integration: ConfigEntry) -> None:
         coordinator: HemmCoordinator = hass.data[DOMAIN][init_integration.entry_id]
         assert coordinator.data is not None
@@ -536,6 +537,21 @@ class TestSetPriceCurve:
 
         coordinator: HemmCoordinator = hass.data[DOMAIN][init_integration.entry_id]
         assert coordinator._manual_prices == [0.42]
+
+    @pytest.mark.req("008:FR-010")
+    async def test_manual_prices_consumed_by_forecast(self, hass: HomeAssistant, init_integration: ConfigEntry) -> None:
+        """A manual curve overrides the adapter in the next price forecast."""
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SET_PRICE_CURVE, {"prices": [0.10, 0.20, 0.30], "resolution_minutes": 30}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+        coordinator: HemmCoordinator = hass.data[DOMAIN][init_integration.entry_id]
+        forecast = coordinator._get_price_forecast()
+
+        assert [v for _, v in forecast] == [0.10, 0.20, 0.30]
+        # 30-minute spacing between points
+        assert (forecast[1][0] - forecast[0][0]).total_seconds() == 1800
 
 
 # ──────────────────────── Nasty Type Combinations ────────────────────────

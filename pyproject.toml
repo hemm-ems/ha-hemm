@@ -64,6 +64,7 @@ markers = [
     "slow: Long-running simulation tests",
     "sim: Sim house tests (Docker + full HA provisioning per house)",
     "warp: Time-warp Docker tests (requires libwarp container)",
+    "req: Requirement(s) this test covers, e.g. req('008:FR-001') — scanned by ../tools/req_coverage.py",
 ]
 addopts = "-m 'not container and not pi and not slow and not sim and not warp' --strict-markers"
 asyncio_mode = "auto"

@@ -25,6 +25,7 @@ async def test_options_flow_shows_form(hass: HomeAssistant, init_integration: Co
 
 
 @pytest.mark.unit
+@pytest.mark.req("007:FR-004")
 async def test_options_flow_updates(hass: HomeAssistant, init_integration: ConfigEntry) -> None:
     """Test that options can be updated."""
     result = await hass.config_entries.options.async_init(init_integration.entry_id)

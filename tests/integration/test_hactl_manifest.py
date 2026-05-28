@@ -106,6 +106,7 @@ class TestManifestValidation:
         ALL_DEVICE_CONFIGS,
         ids=[d[0] for d in ALL_DEVICE_CONFIGS],
     )
+    @pytest.mark.req("001:FR-001", "001:FR-002")
     def test_device_config_produces_valid_manifest(self, hactl: Hactl, device_type: str, config: dict) -> None:
         """Each device type's config flow produces a valid manifest entry."""
         # Add device — if flow completes successfully, config is valid
@@ -146,6 +147,7 @@ class TestManifestInDiagnostics:
         # Entry exists and is loaded — diagnostics endpoint works at this level
         assert hemm_entry["state"] == "loaded"
 
+    @pytest.mark.req("001:FR-002", "001:FR-003")
     def test_invalid_device_rejected(self, hactl: Hactl) -> None:
         """A device config missing required fields is rejected by the flow."""
         entry_id = _get_hemm_entry_id(hactl)
@@ -173,6 +175,7 @@ class TestManifestInDiagnostics:
             # 400 Bad Request means HA schema validation rejected it — expected
             assert "400" in str(e)
 
+    @pytest.mark.req("001:FR-012")
     def test_manifest_schema_enforced(self, hactl: Hactl) -> None:
         """Invalid values (e.g., negative capacity) are rejected."""
         entry_id = _get_hemm_entry_id(hactl)

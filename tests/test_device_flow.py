@@ -269,6 +269,7 @@ async def test_safe_default_required(hass: HomeAssistant, init_integration: Conf
 
 
 @pytest.mark.unit
+@pytest.mark.req("007:FR-005")
 async def test_heat_pump_pro_mode(hass: HomeAssistant, init_integration: ConfigEntry) -> None:
     """Test adding a HeatPump device in pro mode with extra fields."""
     result = await hass.config_entries.options.async_init(init_integration.entry_id)
@@ -324,6 +325,33 @@ async def test_device_configure_includes_control_class(hass: HomeAssistant, init
 
 
 @pytest.mark.unit
+@pytest.mark.req("007:FR-006")
+async def test_pro_tier_downgrades_for_unsupported_type(hass: HomeAssistant, init_integration: ConfigEntry) -> None:
+    """Selecting pro for a type not in DEVICE_PRO_SUPPORT downgrades to advanced."""
+    result = await hass.config_entries.options.async_init(init_integration.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input={"action": "add_device"})
+    # Room does not support pro
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={CONF_DEVICE_TYPE: DeviceType.ROOM, CONF_TIER: ConfigTier.PRO},
+    )
+    assert result["step_id"] == "configure_device"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_DEVICE_NAME: "Downgrade Room",
+            CONF_FLOOR_AREA_M2: 20.0,
+            CONF_INSULATION_CLASS: "medium",
+            CONF_SAFE_DEFAULT_SCRIPT: "script.hemm_room_safe",
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    devices = init_integration.data.get("devices", [])
+    assert devices[0][CONF_TIER] == ConfigTier.ADVANCED
+
+
+@pytest.mark.unit
+@pytest.mark.req("007:FR-005")
 async def test_battery_pro_mode(hass: HomeAssistant, init_integration: ConfigEntry) -> None:
     """Test adding a Battery device in pro mode with SoC limits."""
     result = await hass.config_entries.options.async_init(init_integration.entry_id)
