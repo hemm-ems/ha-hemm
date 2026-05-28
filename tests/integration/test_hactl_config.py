@@ -77,6 +77,7 @@ class TestConfigFlowStart:
 class TestConfigFlowComplete:
     """Tests for completing the HEMM config flow."""
 
+    @pytest.mark.req("007:FR-001")
     def test_flow_creates_entry(self, hactl: Hactl) -> None:
         """Submitting valid data creates a config entry."""
         result = hactl.config_flow_start("hemm")
@@ -90,6 +91,7 @@ class TestConfigFlowComplete:
         if data.get("type") == "create_entry":
             assert data.get("title") == "HEMM"
 
+    @pytest.mark.req("007:FR-002")
     def test_flow_abort_already_configured(self, hactl: Hactl) -> None:
         """Second config flow for hemm aborts with 'already_configured'."""
         # Ensure first entry exists
@@ -163,6 +165,7 @@ class TestOptionsFlow:
         assert result.success
         assert result.json_data.get("step_id") == "select_device"
 
+    @pytest.mark.req("007:FR-003")
     def test_options_flow_add_battery(self, hactl: Hactl) -> None:
         """Full device add flow for battery type."""
         entry_id = _ensure_hemm_entry(hactl)
@@ -223,6 +226,7 @@ class TestOptionsFlow:
 class TestConfigReload:
     """Tests for config entry reload."""
 
+    @pytest.mark.req("007:FR-007")
     def test_reload_keeps_entry_loaded(self, hactl: Hactl) -> None:
         """Reloading the entry keeps it in 'loaded' state."""
         entry_id = _ensure_hemm_entry(hactl)

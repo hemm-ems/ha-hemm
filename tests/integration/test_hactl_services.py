@@ -73,6 +73,7 @@ class TestDryRunReplan:
         result = hactl.svc_call("hemm.replan", {"dry_run": True})
         assert result.success
 
+    @pytest.mark.req("002:FR-001", "004:FR-002", "004:FR-003", "004:FR-004", "008:FR-002")
     def test_replan_normal(self, hactl: Hactl) -> None:
         """hemm.replan without dry_run updates the plan."""
         _ensure_hemm_entry(hactl)
@@ -101,6 +102,7 @@ class TestDryRunTick:
 class TestSetSolverService:
     """Test hemm.set_solver service."""
 
+    @pytest.mark.req("002:FR-001", "008:FR-003")
     def test_switch_to_distributed(self, hactl: Hactl) -> None:
         """Switch solver to distributed backend."""
         _ensure_hemm_entry(hactl)
@@ -150,6 +152,7 @@ class TestSetPriceCurveService:
 class TestConstraintServices:
     """Test constraint management services in the live container."""
 
+    @pytest.mark.req("001:FR-004", "008:FR-006")
     def test_add_constraint(self, hactl: Hactl) -> None:
         """Add a forbidden_window constraint."""
         _ensure_hemm_entry(hactl)
@@ -165,6 +168,7 @@ class TestConstraintServices:
         )
         assert result.success
 
+    @pytest.mark.req("008:FR-007")
     def test_remove_constraint(self, hactl: Hactl) -> None:
         """Remove a previously added constraint."""
         _ensure_hemm_entry(hactl)
@@ -214,6 +218,7 @@ class TestConstraintServices:
         )
         assert result.success
 
+    @pytest.mark.req("008:FR-008")
     def test_add_constraint_dry_run(self, hactl: Hactl) -> None:
         """Dry-run add doesn't actually add the constraint."""
         _ensure_hemm_entry(hactl)
