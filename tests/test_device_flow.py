@@ -326,9 +326,7 @@ async def test_device_configure_includes_control_class(hass: HomeAssistant, init
 
 @pytest.mark.unit
 @pytest.mark.req("007:FR-006")
-async def test_pro_tier_downgrades_for_unsupported_type(
-    hass: HomeAssistant, init_integration: ConfigEntry
-) -> None:
+async def test_pro_tier_downgrades_for_unsupported_type(hass: HomeAssistant, init_integration: ConfigEntry) -> None:
     """Selecting pro for a type not in DEVICE_PRO_SUPPORT downgrades to advanced."""
     result = await hass.config_entries.options.async_init(init_integration.entry_id)
     result = await hass.config_entries.options.async_configure(result["flow_id"], user_input={"action": "add_device"})

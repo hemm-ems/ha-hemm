@@ -539,9 +539,7 @@ class TestSetPriceCurve:
         assert coordinator._manual_prices == [0.42]
 
     @pytest.mark.req("008:FR-010")
-    async def test_manual_prices_consumed_by_forecast(
-        self, hass: HomeAssistant, init_integration: ConfigEntry
-    ) -> None:
+    async def test_manual_prices_consumed_by_forecast(self, hass: HomeAssistant, init_integration: ConfigEntry) -> None:
         """A manual curve overrides the adapter in the next price forecast."""
         await hass.services.async_call(
             DOMAIN, SERVICE_SET_PRICE_CURVE, {"prices": [0.10, 0.20, 0.30], "resolution_minutes": 30}, blocking=True
