@@ -18,6 +18,7 @@ from custom_components.hemm.identification import (
 
 
 @pytest.mark.unit
+@pytest.mark.req("006:FR-002")
 def test_all_device_types_have_identifier() -> None:
     """Test that all 7 device types have an identifier registered."""
     expected_types = {
@@ -62,6 +63,7 @@ def test_identifier_stub_returns_none() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.req("006:FR-001")
 def test_identifier_device_type_property() -> None:
     """Test that each identifier reports its device_type correctly."""
     for device_type, cls in IDENTIFIER_REGISTRY.items():

@@ -73,7 +73,7 @@ class TestDryRunReplan:
         result = hactl.svc_call("hemm.replan", {"dry_run": True})
         assert result.success
 
-    @pytest.mark.req("002:FR-001", "004:FR-002", "004:FR-003", "004:FR-004", "008:FR-002")
+    @pytest.mark.req("002:FR-001", "002:FR-007", "004:FR-002", "004:FR-003", "004:FR-004", "008:FR-002")
     def test_replan_normal(self, hactl: Hactl) -> None:
         """hemm.replan without dry_run updates the plan."""
         _ensure_hemm_entry(hactl)
@@ -202,6 +202,7 @@ class TestConstraintServices:
         result = hactl.svc_call("hemm.bump_priority", {"window_id": "bumpable_container", "new_penalty": 10.0})
         assert result.success
 
+    @pytest.mark.req("001:FR-004", "001:FR-005")
     def test_add_min_soc_constraint(self, hactl: Hactl) -> None:
         """Add a min_soc_until constraint."""
         _ensure_hemm_entry(hactl)
@@ -239,6 +240,7 @@ class TestConstraintServices:
 class TestOnboardingEndToEnd:
     """End-to-end onboarding flow: setup → add devices → replan → verify entities."""
 
+    @pytest.mark.req("002:FR-001", "002:FR-002")
     def test_full_onboarding_flow(self, hactl: Hactl) -> None:
         """Complete onboarding: setup hub → add battery → add EV → replan → check."""
         # 1. Setup HEMM
@@ -292,6 +294,7 @@ class TestOnboardingEndToEnd:
         result = hactl.log(errors=True, component="hemm")
         assert result.success
 
+    @pytest.mark.req("002:FR-001")
     def test_setup_with_distributed_solver(self, hactl: Hactl) -> None:
         """Set up with distributed solver, add device, replan, verify no crash."""
         _ensure_hemm_entry(hactl)

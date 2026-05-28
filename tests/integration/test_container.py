@@ -176,6 +176,7 @@ DEVICE_CONFIGS = [
     DEVICE_CONFIGS,
     ids=[d["device_type"] for d in DEVICE_CONFIGS],
 )
+@pytest.mark.req("001:FR-001", "001:FR-002")
 def test_hemm_add_device_via_options_hactl(hactl: Hactl, device_config: dict) -> None:
     """Test adding each of the 7 device types via hactl config options flow."""
     # Get hemm entry ID
