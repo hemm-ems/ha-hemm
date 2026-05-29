@@ -82,12 +82,10 @@ jobs:
       - name: Test
         run: uv run pytest --cov=custom_components/hemm --cov-report=term-missing
 
-  traceability:
-    name: Traceability
-    uses: hemm-ems/hemm-project/.github/workflows/traceability.yml@main
-    with:
-      core-ref: main
-      ha-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+  # Cross-repo requirement-coverage gate runs in hemm-ems/hemm-project
+  # (Traceability workflow: on push + nightly). It is not called per-PR here
+  # because the umbrella is private and cross-repo reusable-workflow calls are
+  # blocked by org policy; the umbrella-side run is the authoritative gate.
 
   container-test:
     name: Container Tests (HA ${{ matrix.ha-version }})
