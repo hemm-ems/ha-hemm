@@ -15,3 +15,10 @@ venv/
 *.so
 .DS_Store
 .bin/
+
+# Internal-only source docs — live at the local scratch parent, never committed
+# to a public repo (see AGENT.md).
+concept-hemm.md
+implementation-plan-hemm.md
+test-concept-hemm.md
+local-concept-roast.md

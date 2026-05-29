@@ -1,8 +1,9 @@
 """CI guard: fail if the committed req-tag manifest drifts from the tests.
 
 The `@pytest.mark.req("NNN:FR-MMM")` tags link this repo's tests to the spec FRs
-in the parent `specs/` repo. The manifest is generated from the parent tool:
-`python3 tools/req_coverage.py --write-tag-manifests`.
+in the core repo's `specs/`. The manifest is regenerated with
+`python3 tools/req_coverage.py --write-tag-manifests` (run from the core repo,
+with this repo checked out as a sibling).
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ def test_req_tags_match_committed_manifest() -> None:
     assert found == expected, (
         "Requirement tags differ from tests/req_tags_manifest.json. "
         "Run `python3 tools/req_coverage.py --write-tag-manifests` from the "
-        "umbrella repo when adding/removing req tags. "
+        "core repo (with this repo checked out as a sibling) when adding/removing req tags. "
         f"Missing from tests: {sorted(expected - found)}; "
         f"missing from manifest: {sorted(found - expected)}"
     )
