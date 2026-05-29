@@ -14,16 +14,20 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 
 from .const import (
+    CONF_ACTUATION_ENABLED,
     CONF_HORIZON_HOURS,
     CONF_MAX_ITERATIONS,
     CONF_NAME,
     CONF_PRICE_ADAPTER,
     CONF_SOLVER_BACKEND,
+    CONF_WATCHDOG_TIMEOUT_SECONDS,
+    DEFAULT_ACTUATION_ENABLED,
     DEFAULT_HORIZON_HOURS,
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_NAME,
     DEFAULT_PRICE_ADAPTER,
     DEFAULT_SOLVER_BACKEND,
+    DEFAULT_WATCHDOG_TIMEOUT_SECONDS,
     DOMAIN,
     PRICE_ADAPTERS,
     SOLVER_BACKENDS,
@@ -117,6 +121,20 @@ class HemmOptionsFlow(HemmDeviceFlowMixin, OptionsFlow):
                         self.config_entry.data.get(CONF_SOLVER_BACKEND, DEFAULT_SOLVER_BACKEND),
                     ),
                 ): vol.In(SOLVER_BACKENDS),
+                vol.Optional(
+                    CONF_ACTUATION_ENABLED,
+                    default=self.config_entry.options.get(
+                        CONF_ACTUATION_ENABLED,
+                        self.config_entry.data.get(CONF_ACTUATION_ENABLED, DEFAULT_ACTUATION_ENABLED),
+                    ),
+                ): bool,
+                vol.Optional(
+                    CONF_WATCHDOG_TIMEOUT_SECONDS,
+                    default=self.config_entry.options.get(
+                        CONF_WATCHDOG_TIMEOUT_SECONDS,
+                        self.config_entry.data.get(CONF_WATCHDOG_TIMEOUT_SECONDS, DEFAULT_WATCHDOG_TIMEOUT_SECONDS),
+                    ),
+                ): vol.All(int, vol.Range(min=60, max=86400)),
             }
         )
 

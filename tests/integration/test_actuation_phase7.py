@@ -1,0 +1,308 @@
+"""Container proof points for Phase 7 actuation."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from .hactl import Hactl
+from .test_hactl_services import HEMM_FLOW_DATA, _ensure_hemm_entry
+
+
+def _set_actuation(hactl: Hactl, entry_id: str, *, enabled: bool, watchdog_timeout: int = 1800) -> None:
+    result = hactl.config_options(entry_id)
+    flow_id = result.json_data["flow_id"]
+    hactl.config_flow_step(flow_id, {"action": "settings"}, options=True)
+    hactl.config_flow_step(
+        flow_id,
+        {
+            **HEMM_FLOW_DATA,
+            "actuation_enabled": enabled,
+            "watchdog_timeout_seconds": watchdog_timeout,
+        },
+        options=True,
+    )
+
+
+def _reset_phase7_helpers(hactl: Hactl) -> None:
+    hactl.svc_call("input_number.set_value", {"entity_id": "input_number.hemm_phase7_active_calls", "value": 0})
+    hactl.svc_call("input_number.set_value", {"entity_id": "input_number.hemm_phase7_safe_calls", "value": 0})
+    hactl.svc_call("input_boolean.turn_off", {"entity_id": "input_boolean.hemm_phase7_verify_pass"})
+    hactl.svc_call("input_boolean.turn_off", {"entity_id": "input_boolean.hemm_phase7_verify_fail"})
+
+
+def _counter(hactl: Hactl, entity_id: str) -> int:
+    result = hactl.ent_show(entity_id)
+    return int(float(result.json_data.get("state", 0)))
+
+
+def _hemm_entry(hactl: Hactl, entry_id: str) -> dict:
+    result = hactl.config_entries()
+    entries = result.json_data if isinstance(result.json_data, list) else result.json_data.get("entries", [])
+    return next(entry for entry in entries if entry.get("entry_id") == entry_id)
+
+
+def _hemm_devices(hactl: Hactl, entry_id: str) -> list[dict]:
+    entry = _hemm_entry(hactl, entry_id)
+    data = entry.get("data", {})
+    if isinstance(data, dict) and isinstance(data.get("devices"), list):
+        return data["devices"]
+    if isinstance(entry.get("options"), dict) and isinstance(entry["options"].get("devices"), list):
+        return entry["options"]["devices"]
+    return []
+
+
+def _device_id_by_name(hactl: Hactl, entry_id: str, name: str) -> str:
+    try:
+        switch_entity = _find_override_switch(hactl, name)
+        show = hactl.ent_show(switch_entity, full=True)
+        device_id = (show.json_data or {}).get("attributes", {}).get("hemm_device_id")
+        if device_id:
+            return str(device_id)
+    except AssertionError:
+        pass
+
+    devices = _hemm_devices(hactl, entry_id)
+    matches = [device for device in devices if device.get("device_name") == name]
+    assert matches, f"Could not resolve device id for {name!r} from config entry"
+    return matches[-1]["id"]
+
+
+def _add_phase7_battery(hactl: Hactl, entry_id: str, *, name: str, action_script: str, verify_entity: str) -> str:
+    result = hactl.config_options(entry_id)
+    flow_id = result.json_data["flow_id"]
+    hactl.config_flow_step(flow_id, {"action": "add_device"}, options=True)
+    hactl.config_flow_step(flow_id, {"device_type": "battery", "tier": "pro"}, options=True)
+    hactl.config_flow_step(
+        flow_id,
+        {
+            "device_name": name,
+            "capacity_kwh": 10.0,
+            "max_charge_kw": 5.0,
+            "max_discharge_kw": 5.0,
+            "min_soc_pct": 10.0,
+            "max_soc_pct": 90.0,
+            "safe_default_script": "script.hemm_phase7_safe_default",
+            "active_action_script": action_script,
+            "active_action_verify_entity": verify_entity,
+            "active_action_verify_expected": "== on",
+            "active_action_verify_timeout": 1,
+            "active_action_retry_attempts": 2,
+            "active_action_retry_backoff": 0,
+        },
+        options=True,
+    )
+    return _device_id_by_name(hactl, entry_id, name)
+
+
+def _audit_entries(hactl: Hactl) -> list[dict]:
+    result = hactl.ent_ls(pattern="actuation", domain="sensor")
+    assert result.json_data, "No actuation audit sensor found"
+    entities = result.json_data if isinstance(result.json_data, list) else []
+    entity_id = entities[0].get("entity_id", entities[0].get("id", ""))
+    show = hactl.ent_show(entity_id, full=True)
+    attributes = (show.json_data or {}).get("attributes", {})
+    entries = attributes.get("entries", [])
+    assert isinstance(entries, list), "Actuation audit sensor has no structured entries attribute"
+    return entries
+
+
+def _latest_audit_outcome(hactl: Hactl) -> str:
+    entries = _audit_entries(hactl)
+    assert entries, "Actuation audit log is empty"
+    return entries[-1]["outcome"]
+
+
+def _find_override_switch(hactl: Hactl, device_name: str) -> str:
+    result = hactl.ent_ls(pattern="override", domain="switch")
+    assert result.json_data, "No HEMM override switches present"
+    entities = result.json_data if isinstance(result.json_data, list) else []
+    slug = device_name.lower().replace(" ", "_")
+    for entity in entities:
+        haystack = json.dumps(entity).lower()
+        if device_name.lower() in haystack or slug in haystack:
+            return entity.get("entity_id", entity.get("id", ""))
+    raise AssertionError(f"No override switch found for {device_name!r}")
+
+
+@pytest.mark.container
+class TestPhase7ActuationContainer:
+    """SC-001..008 live HA scenarios."""
+
+    @pytest.mark.req("010:FR-001")
+    def test_sc001_passing_verify_actuates_once(self, hactl: Hactl) -> None:
+        entry_id = _ensure_hemm_entry(hactl)
+        _reset_phase7_helpers(hactl)
+        _set_actuation(hactl, entry_id, enabled=True)
+        device_id = _add_phase7_battery(
+            hactl,
+            entry_id,
+            name="Phase7 Passing Battery",
+            action_script="script.hemm_phase7_active_pass",
+            verify_entity="input_boolean.hemm_phase7_verify_pass",
+        )
+        active_before = _counter(hactl, "input_number.hemm_phase7_active_calls")
+
+        result = hactl.svc_call("hemm.replan", {"device_filter": [device_id]})
+
+        assert result.success
+        active_after = _counter(hactl, "input_number.hemm_phase7_active_calls")
+        assert active_after - active_before >= 1
+        assert _latest_audit_outcome(hactl) == "verified"
+
+    @pytest.mark.req("010:FR-001")
+    def test_sc002_verify_failure_retries_safe_default_and_repair(self, hactl: Hactl) -> None:
+        entry_id = _ensure_hemm_entry(hactl)
+        _reset_phase7_helpers(hactl)
+        _set_actuation(hactl, entry_id, enabled=True)
+        device_id = _add_phase7_battery(
+            hactl,
+            entry_id,
+            name="Phase7 Failing Battery",
+            action_script="script.hemm_phase7_active_fail",
+            verify_entity="input_boolean.hemm_phase7_verify_fail",
+        )
+        active_before = _counter(hactl, "input_number.hemm_phase7_active_calls")
+        safe_before = _counter(hactl, "input_number.hemm_phase7_safe_calls")
+
+        result = hactl.svc_call("hemm.replan", {"device_filter": [device_id]})
+
+        assert result.success
+        active_after = _counter(hactl, "input_number.hemm_phase7_active_calls")
+        safe_after = _counter(hactl, "input_number.hemm_phase7_safe_calls")
+        assert active_after - active_before >= 2
+        assert safe_after - safe_before >= 1
+        assert _latest_audit_outcome(hactl) == "safe_default"
+        issues = hactl.issues()
+        assert "actuation_verify_failed" in (issues.stdout + str(issues.json_data))
+
+    @pytest.mark.req("010:FR-002")
+    def test_sc003_default_read_only_onboarding_zero_calls(self, hactl: Hactl) -> None:
+        entry_id = _ensure_hemm_entry(hactl)
+        _reset_phase7_helpers(hactl)
+        _set_actuation(hactl, entry_id, enabled=False)
+        device_id = _add_phase7_battery(
+            hactl,
+            entry_id,
+            name="Phase7 Read Only Battery",
+            action_script="script.hemm_phase7_active_pass",
+            verify_entity="input_boolean.hemm_phase7_verify_pass",
+        )
+        active_before = _counter(hactl, "input_number.hemm_phase7_active_calls")
+
+        result = hactl.svc_call("hemm.replan", {"device_filter": [device_id]})
+
+        assert result.success
+        active_after = _counter(hactl, "input_number.hemm_phase7_active_calls")
+        assert active_after - active_before == 0
+        assert _latest_audit_outcome(hactl) == "skipped:read_only"
+
+    @pytest.mark.req("010:FR-003")
+    def test_sc004_dry_run_records_without_calling_script(self, hactl: Hactl) -> None:
+        entry_id = _ensure_hemm_entry(hactl)
+        _reset_phase7_helpers(hactl)
+        _set_actuation(hactl, entry_id, enabled=True)
+        device_id = _add_phase7_battery(
+            hactl,
+            entry_id,
+            name="Phase7 Dry Run Battery",
+            action_script="script.hemm_phase7_active_pass",
+            verify_entity="input_boolean.hemm_phase7_verify_pass",
+        )
+        active_before = _counter(hactl, "input_number.hemm_phase7_active_calls")
+
+        result = hactl.svc_call("hemm.replan", {"dry_run": True, "device_filter": [device_id]})
+
+        assert result.success
+        active_after = _counter(hactl, "input_number.hemm_phase7_active_calls")
+        assert active_after - active_before == 0
+        assert _latest_audit_outcome(hactl) == "dry_run"
+
+    @pytest.mark.req("010:FR-004")
+    def test_sc005_pre_call_failure_falls_to_safe_default(self, hactl: Hactl) -> None:
+        entry_id = _ensure_hemm_entry(hactl)
+        _reset_phase7_helpers(hactl)
+        _set_actuation(hactl, entry_id, enabled=True)
+        device_id = _add_phase7_battery(
+            hactl,
+            entry_id,
+            name="Phase7 Pre Call Battery",
+            action_script="script.hemm_phase7_active_pass",
+            verify_entity="input_boolean.hemm_phase7_verify_pass",
+        )
+        hactl.svc_call(
+            "hemm.add_constraint_window",
+            {
+                "window_id": "phase7_forbidden",
+                "device_id": device_id,
+                "deadline": "2030-01-01T00:00:00+00:00",
+                "requirement_type": "forbidden_window",
+            },
+        )
+        active_before = _counter(hactl, "input_number.hemm_phase7_active_calls")
+        safe_before = _counter(hactl, "input_number.hemm_phase7_safe_calls")
+
+        result = hactl.svc_call("hemm.replan", {"device_filter": [device_id]})
+
+        assert result.success
+        active_after = _counter(hactl, "input_number.hemm_phase7_active_calls")
+        safe_after = _counter(hactl, "input_number.hemm_phase7_safe_calls")
+        assert active_after - active_before == 0
+        assert safe_after - safe_before >= 1
+        assert _latest_audit_outcome(hactl) == "safe_default"
+
+    @pytest.mark.req("010:FR-005")
+    def test_sc006_watchdog_safe_defaults_even_read_only_or_override(self, hactl: Hactl) -> None:
+        entry_id = _ensure_hemm_entry(hactl)
+        _reset_phase7_helpers(hactl)
+        _set_actuation(hactl, entry_id, enabled=False, watchdog_timeout=60)
+        device_name = "Phase7 Watchdog Battery"
+        _add_phase7_battery(
+            hactl,
+            entry_id,
+            name=device_name,
+            action_script="script.hemm_phase7_active_pass",
+            verify_entity="input_boolean.hemm_phase7_verify_pass",
+        )
+        hactl.svc_call("switch.turn_on", {"entity_id": _find_override_switch(hactl, device_name)})
+        safe_before = _counter(hactl, "input_number.hemm_phase7_safe_calls")
+
+        result = hactl.svc_call("hemm.force_watchdog", {"simulate_stale_for_seconds": 61})
+
+        assert result.success
+        safe_after = _counter(hactl, "input_number.hemm_phase7_safe_calls")
+        assert safe_after - safe_before >= 1
+        assert _latest_audit_outcome(hactl) == "safe_default"
+
+    @pytest.mark.req("010:FR-006")
+    def test_sc007_override_switch_suspends_device_actuation(self, hactl: Hactl) -> None:
+        entry_id = _ensure_hemm_entry(hactl)
+        _reset_phase7_helpers(hactl)
+        _set_actuation(hactl, entry_id, enabled=True)
+        device_name = "Phase7 Override Battery"
+        device_id = _add_phase7_battery(
+            hactl,
+            entry_id,
+            name=device_name,
+            action_script="script.hemm_phase7_active_pass",
+            verify_entity="input_boolean.hemm_phase7_verify_pass",
+        )
+        hactl.svc_call("switch.turn_on", {"entity_id": _find_override_switch(hactl, device_name)})
+        active_before = _counter(hactl, "input_number.hemm_phase7_active_calls")
+
+        result = hactl.svc_call("hemm.replan", {"device_filter": [device_id]})
+
+        assert result.success
+        active_after = _counter(hactl, "input_number.hemm_phase7_active_calls")
+        assert active_after - active_before == 0
+        assert _latest_audit_outcome(hactl) == "skipped:override"
+
+    @pytest.mark.req("010:FR-007")
+    def test_sc008_audit_log_has_outcomes_without_raw_entity_values(self, hactl: Hactl) -> None:
+        entries = _audit_entries(hactl)
+        output = json.dumps(entries)
+
+        assert any(outcome in output for outcome in ("verified", "safe_default", "dry_run", "skipped:read_only"))
+        assert "input_boolean.hemm_phase7_verify_pass" not in output
+        assert "script.hemm_phase7_active_pass" not in output

@@ -10,6 +10,15 @@ CONF_HORIZON_HOURS = "horizon_hours"
 CONF_MAX_ITERATIONS = "max_iterations"
 CONF_PRICE_ADAPTER = "price_adapter"
 CONF_SOLVER_BACKEND = "solver_backend"
+CONF_ACTUATION_ENABLED = "actuation_enabled"
+CONF_WATCHDOG_TIMEOUT_SECONDS = "watchdog_timeout_seconds"
+CONF_ACTIONS = "actions"
+CONF_ACTIVE_ACTION_SCRIPT = "active_action_script"
+CONF_ACTIVE_ACTION_VERIFY_ENTITY = "active_action_verify_entity"
+CONF_ACTIVE_ACTION_VERIFY_EXPECTED = "active_action_verify_expected"
+CONF_ACTIVE_ACTION_VERIFY_TIMEOUT = "active_action_verify_timeout"
+CONF_ACTIVE_ACTION_RETRY_ATTEMPTS = "active_action_retry_attempts"
+CONF_ACTIVE_ACTION_RETRY_BACKOFF = "active_action_retry_backoff"
 
 # Sub-entry config keys
 CONF_DEVICE_TYPE = "device_type"
@@ -80,6 +89,8 @@ DEFAULT_HORIZON_HOURS = 24
 DEFAULT_MAX_ITERATIONS = 50
 DEFAULT_PRICE_ADAPTER = "template"
 DEFAULT_SOLVER_BACKEND = "milp_central"
+DEFAULT_ACTUATION_ENABLED = False
+DEFAULT_WATCHDOG_TIMEOUT_SECONDS = 1800
 
 # Solver backend choices
 SOLVER_BACKENDS = ["milp_central", "distributed"]
@@ -102,6 +113,7 @@ SERVICE_ADD_CONSTRAINT = "add_constraint_window"
 SERVICE_REMOVE_CONSTRAINT = "remove_constraint"
 SERVICE_BUMP_PRIORITY = "bump_priority"
 SERVICE_TICK = "tick"
+SERVICE_FORCE_WATCHDOG = "force_watchdog"
 
 # Event names
 EVENT_ITERATION_COMPLETE = f"{DOMAIN}_iteration_complete"

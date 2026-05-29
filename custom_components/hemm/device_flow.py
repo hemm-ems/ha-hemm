@@ -30,6 +30,12 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_ACTIVE_ACTION_RETRY_ATTEMPTS,
+    CONF_ACTIVE_ACTION_RETRY_BACKOFF,
+    CONF_ACTIVE_ACTION_SCRIPT,
+    CONF_ACTIVE_ACTION_VERIFY_ENTITY,
+    CONF_ACTIVE_ACTION_VERIFY_EXPECTED,
+    CONF_ACTIVE_ACTION_VERIFY_TIMEOUT,
     CONF_AZIMUTH_DEG,
     CONF_BATTERY_CAPACITY_KWH,
     CONF_CAPACITY_KWH,
@@ -109,6 +115,15 @@ def _safe_default_schema(tier: str) -> dict:
         schema[vol.Optional(CONF_SAFE_DEFAULT_VERIFY_ENTITY)] = _entity()
         schema[vol.Optional(CONF_SAFE_DEFAULT_VERIFY_EXPECTED)] = TextSelector(TextSelectorConfig(type="text"))
         schema[vol.Optional(CONF_SAFE_DEFAULT_VERIFY_TIMEOUT, default=300)] = _number(10, 3600, 10)
+    if tier == ConfigTier.PRO:
+        schema[vol.Optional(CONF_ACTIVE_ACTION_SCRIPT)] = TextSelector(TextSelectorConfig(type="text"))
+        schema[vol.Optional(CONF_ACTIVE_ACTION_VERIFY_ENTITY)] = _entity()
+        schema[vol.Optional(CONF_ACTIVE_ACTION_VERIFY_EXPECTED, default="== on")] = TextSelector(
+            TextSelectorConfig(type="text")
+        )
+        schema[vol.Optional(CONF_ACTIVE_ACTION_VERIFY_TIMEOUT, default=300)] = _number(1, 3600, 1)
+        schema[vol.Optional(CONF_ACTIVE_ACTION_RETRY_ATTEMPTS, default=2)] = _number(1, 10, 1)
+        schema[vol.Optional(CONF_ACTIVE_ACTION_RETRY_BACKOFF, default=60)] = _number(0, 3600, 1)
     return schema
 
 

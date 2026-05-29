@@ -28,6 +28,7 @@ async def async_setup_entry(
     coordinator: HemmCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities: list[SensorEntity] = []
+    entities.append(HemmActuationLogSensor(coordinator, entry))
     devices: list[dict[str, Any]] = entry.data.get("devices", [])
     for device in devices:
         device_id = device.get("id", "unknown")
@@ -40,6 +41,31 @@ async def async_setup_entry(
         entities.append(HemmReasonSensor(coordinator, entry, device_id, device_name, device_type))
 
     async_add_entities(entities)
+
+
+class HemmActuationLogSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
+    """Sensor exposing the latest anonymized actuation outcome."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: HemmCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_actuation_log"
+        self._attr_name = "Actuation Log"
+        self._attr_native_value = "idle"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": entry.title,
+            "manufacturer": "HEMM",
+        }
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        audit_log = self.coordinator.actuation_audit_log
+        self._attr_native_value = audit_log[-1]["outcome"] if audit_log else "idle"
+        self._attr_extra_state_attributes = {"entries": audit_log[-10:]}
+        self.async_write_ha_state()
 
 
 class HemmPlanSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):

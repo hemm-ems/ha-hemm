@@ -10,17 +10,23 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .actuator import ActuationDecision, ActuatorEngine
 from .const import (
+    CONF_ACTUATION_ENABLED,
     CONF_HORIZON_HOURS,
     CONF_MAX_ITERATIONS,
     CONF_PRICE_ADAPTER,
     CONF_SOLVER_BACKEND,
+    CONF_WATCHDOG_TIMEOUT_SECONDS,
+    DEFAULT_ACTUATION_ENABLED,
     DEFAULT_HORIZON_HOURS,
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_PRICE_ADAPTER,
     DEFAULT_SOLVER_BACKEND,
+    DEFAULT_WATCHDOG_TIMEOUT_SECONDS,
     DOMAIN,
     EVENT_CONSTRAINT_ADDED,
     EVENT_CONSTRAINT_RESOLVED,
@@ -33,6 +39,8 @@ from .manifest_builder import build_all_manifests
 from .time import HAClock
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from hemm_core.constraints import ConstraintWindowManager
     from hemm_core.manifest.messages import ConstraintWindow, PlanMessage
     from hemm_core.solvers.protocol import SolverResult
@@ -98,6 +106,14 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_SOLVER_BACKEND,
             entry.data.get(CONF_SOLVER_BACKEND, DEFAULT_SOLVER_BACKEND),
         )
+        self._actuation_enabled: bool = entry.options.get(
+            CONF_ACTUATION_ENABLED,
+            entry.data.get(CONF_ACTUATION_ENABLED, DEFAULT_ACTUATION_ENABLED),
+        )
+        self._watchdog_timeout_seconds: int = entry.options.get(
+            CONF_WATCHDOG_TIMEOUT_SECONDS,
+            entry.data.get(CONF_WATCHDOG_TIMEOUT_SECONDS, DEFAULT_WATCHDOG_TIMEOUT_SECONDS),
+        )
 
         # Solver and constraint state
         self._constraint_manager: ConstraintWindowManager | None = None
@@ -107,6 +123,9 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._lambda_history: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
         self._dry_run_log: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
         self._id_results: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
+        self._actuator = ActuatorEngine(hass, clock=self._clock)
+        self._last_successful_update = self._clock.now()
+        self._watchdog_unsub: Callable[[], None] | None = None
 
         # Manual price override (set via hemm.set_price_curve service)
         self._manual_prices: list[float] | None = None
@@ -127,6 +146,26 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def price_adapter(self) -> str:
         """Return active price adapter name."""
         return self._price_adapter
+
+    @property
+    def actuation_enabled(self) -> bool:
+        """Return whether live actuation is enabled."""
+        return self._actuation_enabled
+
+    @property
+    def watchdog_timeout_seconds(self) -> int:
+        """Return watchdog timeout in seconds."""
+        return self._watchdog_timeout_seconds
+
+    @property
+    def actuator(self) -> ActuatorEngine:
+        """Return the actuator engine."""
+        return self._actuator
+
+    @property
+    def actuation_audit_log(self) -> list[dict[str, Any]]:
+        """Return anonymized actuation audit entries."""
+        return self._actuator.audit_log
 
     @property
     def constraint_manager(self) -> ConstraintWindowManager:
@@ -154,6 +193,19 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def id_results(self) -> list[dict[str, Any]]:
         """Return identification results history."""
         return list(self._id_results)
+
+    def start_watchdog(self) -> None:
+        """Start periodic watchdog checks."""
+        if self._watchdog_unsub is not None:
+            return
+        interval = timedelta(seconds=max(30, min(self._watchdog_timeout_seconds, 300)))
+        self._watchdog_unsub = async_track_time_interval(self.hass, self._async_watchdog_tick, interval)
+
+    def stop_watchdog(self) -> None:
+        """Stop periodic watchdog checks."""
+        if self._watchdog_unsub is not None:
+            self._watchdog_unsub()
+            self._watchdog_unsub = None
 
     def _get_solver(self) -> Any:
         """Create a solver instance for the active backend."""
@@ -294,6 +346,13 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             }
             self._dry_run_log.append(entry)
             self.hass.bus.async_fire(EVENT_DRY_RUN_COMPLETED, entry)
+            for decision in self._decisions_from_result(result, manifests):
+                await self._actuator.async_actuate(
+                    decision,
+                    actuation_enabled=self._actuation_enabled,
+                    dry_run=True,
+                    pre_call_check=self._async_pre_call_check,
+                )
             return result
 
         # Apply results
@@ -301,6 +360,13 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._iteration_count += 1
         if result.status in (SolverStatus.OPTIMAL, SolverStatus.FEASIBLE):
             self._previous_plans = result.plans
+            for decision in self._decisions_from_result(result, manifests):
+                await self._actuator.async_actuate(
+                    decision,
+                    actuation_enabled=self._actuation_enabled,
+                    pre_call_check=self._async_pre_call_check,
+                )
+            self._last_successful_update = self._clock.now()
 
         # Record lambda history
         self._lambda_history.append(
@@ -326,6 +392,83 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         return result
+
+    def _decisions_from_result(self, result: Any, manifests: list[Any]) -> list[ActuationDecision]:
+        """Map current plan slots to manifest actions by slot.mode."""
+        manifest_map = {manifest.device_id: manifest for manifest in manifests}
+        decisions: list[ActuationDecision] = []
+        for plan in getattr(result, "plans", []) or []:
+            manifest = manifest_map.get(plan.device_id)
+            if manifest is None or not getattr(plan, "slots", None):
+                continue
+            control_class = str(getattr(manifest, "control_class", "planned"))
+            if control_class.endswith("passive"):
+                continue
+            slot = plan.slots[0]
+            mode = slot.mode
+            if not mode:
+                continue
+            action = getattr(manifest, "actions", {}).get(mode)
+            if action is None:
+                continue
+            decisions.append(
+                ActuationDecision(
+                    device_id=plan.device_id,
+                    action=action,
+                    safe_default=manifest.safe_default,
+                    plan_mode=mode,
+                )
+            )
+        return decisions
+
+    async def _async_pre_call_check(self, device_id: str, action: Any) -> bool:
+        """Re-check hard constraints and current state immediately before a script call."""
+        try:
+            for window in self.constraint_manager.get_active(self._clock.now()):
+                if getattr(window, "device_id", None) != device_id:
+                    continue
+                requirement = getattr(window, "requirement", None)
+                if requirement is not None and requirement.__class__.__name__ == "ForbiddenWindow":
+                    return False
+        except (ImportError, ModuleNotFoundError):
+            return True
+        except Exception:
+            _LOGGER.exception("Pre-call constraint re-check failed for %s", device_id)
+            return False
+
+        verify = getattr(action, "verify", None)
+        if verify is not None:
+            state = self.hass.states.get(verify.entity)
+            if state is not None and state.state in {"unavailable", "unknown"}:
+                return False
+        return True
+
+    async def _async_watchdog_tick(self, _now: datetime) -> None:
+        """Periodic watchdog entry point."""
+        await self.async_check_watchdog()
+
+    async def async_check_watchdog(self) -> bool:
+        """Run the watchdog once. Returns True when it fired."""
+        elapsed = (self._clock.now() - self._last_successful_update).total_seconds()
+        if elapsed < self._watchdog_timeout_seconds:
+            return False
+
+        devices: list[dict[str, Any]] = self.config_entry.data.get("devices", [])
+        if not devices:
+            self._last_successful_update = self._clock.now()
+            return False
+
+        manifests = build_all_manifests(devices)
+        decisions = [
+            ActuationDecision(
+                device_id=manifest.device_id, action=manifest.safe_default, safe_default=manifest.safe_default
+            )
+            for manifest in manifests
+        ]
+        await self._actuator.async_watchdog_safe_defaults(decisions, reason="watchdog_timeout")
+        self._last_successful_update = self._clock.now()
+        self.async_set_updated_data(self._build_data())
+        return True
 
     async def async_run_identification(self) -> list[IdentificationResult]:
         """Run online identification for all devices."""
@@ -381,6 +524,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 timeout=SOLVER_TIMEOUT_SECONDS,
             )
             self.async_set_updated_data(self._build_data())
+            self._last_successful_update = self._clock.now()
         except TimeoutError:
             _LOGGER.error("Solver timed out after %s s", SOLVER_TIMEOUT_SECONDS)
         except Exception:
@@ -457,4 +601,6 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "device_plans": device_plans,
             "last_status": last_status,
             "last_solve_time": last_solve_time,
+            "actuation_enabled": self._actuation_enabled,
+            "actuation_audit_count": len(self._actuator.audit_log),
         }

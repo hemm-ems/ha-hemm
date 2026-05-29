@@ -64,10 +64,13 @@ async def async_get_config_entry_diagnostics(
             "iteration_count": data.get("iteration_count", 0),
             "last_status": data.get("last_status"),
             "last_solve_time": data.get("last_solve_time"),
+            "actuation_enabled": coordinator.actuation_enabled,
+            "watchdog_timeout_seconds": coordinator.watchdog_timeout_seconds,
         },
         "active_constraint_windows": windows_data,
         "last_solver_result": solver_diagnostics,
         "lambda_history": list(coordinator._lambda_history),
         "dry_run_log": coordinator.dry_run_log,
+        "actuation_audit_log": coordinator.actuation_audit_log,
         "identification_results": coordinator.id_results,
     }

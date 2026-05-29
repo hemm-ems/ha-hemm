@@ -5,3 +5,46 @@ homeassistant:
   currency: EUR
 
 default_config:
+
+input_boolean:
+  hemm_phase7_verify_pass:
+    name: HEMM Phase7 Verify Pass
+  hemm_phase7_verify_fail:
+    name: HEMM Phase7 Verify Fail
+
+input_number:
+  hemm_phase7_active_calls:
+    name: HEMM Phase7 Active Calls
+    min: 0
+    max: 100
+    step: 1
+  hemm_phase7_safe_calls:
+    name: HEMM Phase7 Safe Calls
+    min: 0
+    max: 100
+    step: 1
+
+script:
+  hemm_phase7_active_pass:
+    sequence:
+      - service: input_number.increment
+        target:
+          entity_id: input_number.hemm_phase7_active_calls
+      - service: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.hemm_phase7_verify_pass
+  hemm_phase7_active_fail:
+    sequence:
+      - service: input_number.increment
+        target:
+          entity_id: input_number.hemm_phase7_active_calls
+  hemm_phase7_safe_default:
+    sequence:
+      - service: input_number.increment
+        target:
+          entity_id: input_number.hemm_phase7_safe_calls
+      - service: input_boolean.turn_off
+        target:
+          entity_id:
+            - input_boolean.hemm_phase7_verify_pass
+            - input_boolean.hemm_phase7_verify_fail

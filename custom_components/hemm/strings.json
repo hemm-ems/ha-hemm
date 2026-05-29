@@ -39,7 +39,9 @@
           "horizon_hours": "Planning horizon (hours)",
           "max_iterations": "Maximum solver iterations",
           "price_adapter": "Price source adapter",
-          "solver_backend": "Solver backend"
+          "solver_backend": "Solver backend",
+          "actuation_enabled": "Enable live actuation",
+          "watchdog_timeout_seconds": "Watchdog timeout (seconds)"
         }
       },
       "select_device": {
@@ -71,6 +73,14 @@
     "solver_degraded": {
       "title": "Solver performance degraded",
       "description": "The HEMM solver did not converge within the expected time. This may indicate a configuration issue or excessive device count."
+    },
+    "actuation_verify_failed": {
+      "title": "HEMM actuation verification failed",
+      "description": "HEMM could not verify an actuation for device {device_id}. The device safe default was invoked. Review the user script and verification entity."
+    },
+    "actuation_self_confirming": {
+      "title": "HEMM actuation verification is self-confirming",
+      "description": "Device {device_id} has an action whose verification entity matches the entity it writes. HEMM refused that action. Use an independent verification entity."
     },
     "online_id_update": {
       "title": "Model update available for {device_name}",
@@ -219,6 +229,16 @@
         "dry_run": {
           "name": "Dry run",
           "description": "Run without applying results."
+        }
+      }
+    },
+    "force_watchdog": {
+      "name": "Force watchdog",
+      "description": "Test/debug service that runs one watchdog check.",
+      "fields": {
+        "simulate_stale_for_seconds": {
+          "name": "Simulate stale seconds",
+          "description": "Backdate the last successful solve by this many seconds before checking the watchdog."
         }
       }
     }

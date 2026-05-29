@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
@@ -14,6 +15,7 @@ from .const import (
     DOMAIN,
     SERVICE_ADD_CONSTRAINT,
     SERVICE_BUMP_PRIORITY,
+    SERVICE_FORCE_WATCHDOG,
     SERVICE_REMOVE_CONSTRAINT,
     SERVICE_REPLAN,
     SERVICE_SET_PRICE_CURVE,
@@ -144,6 +146,12 @@ TICK_SCHEMA = vol.Schema(
     }
 )
 
+FORCE_WATCHDOG_SCHEMA = vol.Schema(
+    {
+        vol.Optional("simulate_stale_for_seconds"): vol.All(vol.Coerce(int), vol.Range(min=0, max=86400)),
+    }
+)
+
 
 async def async_register_services(hass: HomeAssistant) -> None:
     """Register all HEMM services."""
@@ -155,8 +163,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
         device_filter = call.data.get("device_filter")
         _LOGGER.info("hemm.replan called (dry_run=%s, device_filter=%s)", dry_run, device_filter)
         result = await coordinator.async_run_solver(dry_run=dry_run, device_filter=device_filter)
-        if not dry_run:
-            coordinator.async_set_updated_data(coordinator._build_data())
+        coordinator.async_set_updated_data(coordinator._build_data())
         _LOGGER.info("Replan complete: status=%s, time=%.2fs", result.status, result.solve_time_seconds)
 
     async def handle_simulate(call: ServiceCall) -> None:
@@ -251,6 +258,15 @@ async def async_register_services(hass: HomeAssistant) -> None:
             await coordinator.async_request_refresh()
         _LOGGER.info("Tick complete: status=%s", result.status)
 
+    async def handle_force_watchdog(call: ServiceCall) -> None:
+        """Handle hemm.force_watchdog service call — test/debug watchdog trigger."""
+        coordinator = _get_coordinator(hass)
+        stale_for = call.data.get("simulate_stale_for_seconds")
+        if stale_for is not None:
+            coordinator._last_successful_update = coordinator.clock.now() - timedelta(seconds=stale_for)
+        fired = await coordinator.async_check_watchdog()
+        _LOGGER.info("Force watchdog complete: fired=%s stale_for=%s", fired, stale_for)
+
     hass.services.async_register(DOMAIN, SERVICE_REPLAN, handle_replan, schema=REPLAN_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SIMULATE, handle_simulate, schema=SIMULATE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SET_PRICE_CURVE, handle_set_price_curve, schema=SET_PRICE_CURVE_SCHEMA)
@@ -261,6 +277,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(DOMAIN, SERVICE_BUMP_PRIORITY, handle_bump_priority, schema=BUMP_PRIORITY_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_TICK, handle_tick, schema=TICK_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_FORCE_WATCHDOG, handle_force_watchdog, schema=FORCE_WATCHDOG_SCHEMA)
 
 
 async def async_unregister_services(hass: HomeAssistant) -> None:
@@ -274,5 +291,6 @@ async def async_unregister_services(hass: HomeAssistant) -> None:
         SERVICE_REMOVE_CONSTRAINT,
         SERVICE_BUMP_PRIORITY,
         SERVICE_TICK,
+        SERVICE_FORCE_WATCHDOG,
     ):
         hass.services.async_remove(DOMAIN, service)
