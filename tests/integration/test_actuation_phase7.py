@@ -7,9 +7,12 @@ import json
 import pytest
 
 from .hactl import Hactl
-from .test_hactl_services import HEMM_FLOW_DATA, _ensure_hemm_entry
+from .test_hactl_services import _ensure_hemm_entry
 
 
+# Settings step of the OPTIONS flow does not accept "name" (that's only on the
+# initial config flow); using HEMM_FLOW_DATA verbatim would 400. Submit only
+# the keys the options-settings schema declares.
 def _set_actuation(hactl: Hactl, entry_id: str, *, enabled: bool, watchdog_timeout: int = 1800) -> None:
     result = hactl.config_options(entry_id)
     flow_id = result.json_data["flow_id"]
@@ -17,7 +20,10 @@ def _set_actuation(hactl: Hactl, entry_id: str, *, enabled: bool, watchdog_timeo
     hactl.config_flow_step(
         flow_id,
         {
-            **HEMM_FLOW_DATA,
+            "horizon_hours": 24,
+            "max_iterations": 50,
+            "price_adapter": "template",
+            "solver_backend": "milp_central",
             "actuation_enabled": enabled,
             "watchdog_timeout_seconds": watchdog_timeout,
         },
