@@ -63,11 +63,31 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
+      - name: Checkout core clock audit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: hemm-ems/hemm
+          path: _tools/hemm
+          persist-credentials: false
+
+      - name: Clock audit
+        run: |
+          uv run python _tools/hemm/tools/check_clock.py \
+            --root custom_components/hemm \
+            --allow custom_components/hemm/time.py
+
       - name: Install hemm core (from GitHub)
         run: uv pip install git+https://github.com/swifty99/hemm.git
 
       - name: Test
         run: uv run pytest --cov=custom_components/hemm --cov-report=term-missing
+
+  traceability:
+    name: Traceability
+    uses: hemm-ems/hemm-project/.github/workflows/traceability.yml@main
+    with:
+      core-ref: main
+      ha-ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
   container-test:
     name: Container Tests (HA ${{ matrix.ha-version }})

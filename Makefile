@@ -1,4 +1,4 @@
-.PHONY: test test-container test-pi test-slow ci ci-full lint format install-hactl docker-up docker-down docker-reset sim-up sim-setup sim-down sim-all sim-status sim-test check-clock \
+.PHONY: test test-container test-pi test-slow ci ci-full lint format install-hactl docker-up docker-down docker-reset sim-up sim-setup sim-down sim-all sim-status sim-test check-clock branding-audit \
 	warp-up warp-down warp-build warp-logs warp-shell warp-set-speed warp-date warp-clock test-warp test-warp-stress
 
 ## Default: fast unit tests only
@@ -33,6 +33,10 @@ check-clock:
 	uv run python ../hemm/tools/check_clock.py \
 		--root custom_components/hemm \
 		--allow custom_components/hemm/time.py
+
+## Branding audit: intentionally allowed to fail until the Phase 3 rename lands.
+branding-audit:
+	python3 ../tools/branding_audit.py
 
 ## CI full: ci + container tests
 ci-full: ci test-container
