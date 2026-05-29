@@ -1,15 +1,15 @@
 # ha-hemm — Home Assistant Integration for HEMM
 
-[![CI](https://github.com/swifty99/ha-hemm/actions/workflows/ci.yml/badge.svg)](https://github.com/swifty99/ha-hemm/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/swifty99/ha-hemm/actions/workflows/codeql.yml/badge.svg)](https://github.com/swifty99/ha-hemm/actions/workflows/codeql.yml)
-[![Release](https://img.shields.io/github/v/release/swifty99/ha-hemm)](https://github.com/swifty99/ha-hemm/releases/latest)
-[![License](https://img.shields.io/github/license/swifty99/ha-hemm)](LICENSE)
+[![CI](https://github.com/hemm-ems/ha-hemm/actions/workflows/ci.yml/badge.svg)](https://github.com/hemm-ems/ha-hemm/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/hemm-ems/ha-hemm/actions/workflows/codeql.yml/badge.svg)](https://github.com/hemm-ems/ha-hemm/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/hemm-ems/ha-hemm)](https://github.com/hemm-ems/ha-hemm/releases/latest)
+[![License](https://img.shields.io/github/license/hemm-ems/ha-hemm)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 [![HACS](https://img.shields.io/badge/HACS-Custom-blue)](https://hacs.xyz/)
 
 > **Beta.** The integration is functional and tested, but service names, sensor names, and the manifest schema may still change before 1.0. Contributions and code reviews are welcome — this is a good time to shape the design.
 
-Home Assistant integration for the [HEMM](https://github.com/swifty99/hemm) energy optimization library. HEMM reads device manifests, active constraints, and price/solar forecasts, then produces 24-hour power plans as standard HA sensors. Actuation happens through HA scripts you write; vendor quirks stay in your automations.
+Home Assistant integration for the [HEMM](https://github.com/hemm-ems/hemm) energy optimization library. HEMM reads device manifests, active constraints, and price/solar forecasts, then produces 24-hour power plans as standard HA sensors. Actuation happens through HA scripts you write; vendor quirks stay in your automations.
 
 ## Key Design Points
 
@@ -66,11 +66,11 @@ Each file is a standard HA automation (id, alias, trigger, action) that you can 
 
 ### HACS (coming soon)
 
-HACS support is in progress. When available, add `https://github.com/swifty99/ha-hemm` as a custom repository in HACS, install "HEMM Energy Optimizer", restart Home Assistant, and add the integration via Settings → Integrations → Add → HEMM.
+HACS support is in progress. When available, add `https://github.com/hemm-ems/ha-hemm` as a custom repository in HACS, install "HEMM Energy Optimizer", restart Home Assistant, and add the integration via Settings → Integrations → Add → HEMM.
 
 ### Manual
 
-1. Download the [latest release](https://github.com/swifty99/ha-hemm/releases/latest) and unzip it.
+1. Download the [latest release](https://github.com/hemm-ems/ha-hemm/releases/latest) and unzip it.
 2. Copy the `custom_components/hemm/` directory into your HA configuration directory at `config/custom_components/hemm/`. You can do this via the [File Editor add-on](https://www.home-assistant.io/integrations/file_editor/), a Samba share, or SFTP — no SSH required.
 3. Restart Home Assistant. HA automatically installs the `hemm` Python library on first load (it is declared in the integration's `manifest.json` requirements).
 4. Add the integration via Settings → Integrations → Add → HEMM.
@@ -90,7 +90,7 @@ See [docs/testing.md](docs/testing.md) for how to run each layer locally.
 
 Issues, pull requests, and code reviews are welcome. The project is in early-access beta, so architectural feedback is particularly useful at this stage. Please open an issue before large changes to avoid duplicated effort.
 
-Solver logic, constraint vocabulary, and manifest schema changes belong in the [HEMM core library](https://github.com/swifty99/hemm).
+Solver logic, constraint vocabulary, and manifest schema changes belong in the [HEMM core library](https://github.com/hemm-ems/hemm).
 
 ## Development
 

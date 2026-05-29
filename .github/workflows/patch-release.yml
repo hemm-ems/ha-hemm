@@ -85,7 +85,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --extra dev
-          uv pip install git+https://github.com/swifty99/hemm.git
+          uv pip install git+https://github.com/hemm-ems/hemm.git
 
       - name: Lint
         run: |
@@ -116,8 +116,8 @@ jobs:
 
       - name: Install hemm + companion inside container
         run: |
-          docker exec hemm-ha-test pip install --quiet git+https://github.com/swifty99/hemm.git
-          docker exec hemm-ha-test pip install --quiet git+https://github.com/swifty99/hactl_companion.git
+          docker exec hemm-ha-test pip install --quiet git+https://github.com/hemm-ems/hemm.git
+          docker exec hemm-ha-test pip install --quiet git+https://github.com/hemm-ems/hactl-companion.git
 
       - name: Restart HA and wait for health
         run: |

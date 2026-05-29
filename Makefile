@@ -108,15 +108,15 @@ docker-logs-companion:
 install-hactl:
 ifeq ($(OS),Windows_NT)
 	@if not exist .bin mkdir .bin
-	@powershell -Command "$$ProgressPreference='SilentlyContinue'; $$tag=(Invoke-RestMethod 'https://api.github.com/repos/swifty99/hactl/releases/latest').tag_name; $$v=$$tag.TrimStart('v'); $$url=\"https://github.com/swifty99/hactl/releases/download/$$tag/hactl_$${v}_windows_amd64.zip\"; Invoke-WebRequest -Uri $$url -OutFile '.bin/hactl.zip'; Expand-Archive -Path '.bin/hactl.zip' -DestinationPath '.bin' -Force; Remove-Item '.bin/hactl.zip'"
+	@powershell -Command "$$ProgressPreference='SilentlyContinue'; $$tag=(Invoke-RestMethod 'https://api.github.com/repos/hemm-ems/hactl/releases/latest').tag_name; $$v=$$tag.TrimStart('v'); $$url=\"https://github.com/hemm-ems/hactl/releases/download/$$tag/hactl_$${v}_windows_amd64.zip\"; Invoke-WebRequest -Uri $$url -OutFile '.bin/hactl.zip'; Expand-Archive -Path '.bin/hactl.zip' -DestinationPath '.bin' -Force; Remove-Item '.bin/hactl.zip'"
 	@echo "hactl installed to .bin/hactl.exe"
 else
 	@mkdir -p .bin
-	@TAG=$$(curl -sL https://api.github.com/repos/swifty99/hactl/releases/latest | grep tag_name | head -1 | cut -d'"' -f4); \
+	@TAG=$$(curl -sL https://api.github.com/repos/hemm-ems/hactl/releases/latest | grep tag_name | head -1 | cut -d'"' -f4); \
 	 VERSION=$${TAG#v}; \
 	 ARCH=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
 	 OS_NAME=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
-	 curl -sL "https://github.com/swifty99/hactl/releases/download/$${TAG}/hactl_$${VERSION}_$${OS_NAME}_$${ARCH}.tar.gz" | tar xz -C .bin/
+	 curl -sL "https://github.com/hemm-ems/hactl/releases/download/$${TAG}/hactl_$${VERSION}_$${OS_NAME}_$${ARCH}.tar.gz" | tar xz -C .bin/
 	@chmod +x .bin/hactl
 	@echo "hactl installed to .bin/hactl"
 endif

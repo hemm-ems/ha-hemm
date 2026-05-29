@@ -83,7 +83,7 @@ All notable changes to this project will be documented in this file.
 - **Architecture: companion inside HA container** — the hactl-companion now runs as a pip-installed background process inside the HA container instead of a separate Docker container. This matches the real HA addon architecture where the companion has direct filesystem access to `/config`.
 - Removed `hactl_client.py` — onboarding is now handled inline in `conftest.py` using stdlib `urllib` + `aiohttp` WebSocket (no separate client class).
 - `docker-compose.test.yml` simplified to a single service (no companion container, no shared network).
-- `test_hactl_companion.py` reduced to hactl-routed tests only (templates, scripts, automations, services). Direct companion API tests (health, config files, security) moved to the companion repo.
+- Companion-focused hactl tests reduced to hactl-routed coverage only (templates, scripts, automations, services). Direct companion API tests (health, config files, security) moved to the companion repo.
 - CI workflow updated: companion installed and started inside HA container.
 - `testing.md` updated with new single-container architecture diagram.
 

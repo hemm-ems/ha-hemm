@@ -26,8 +26,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/hemm-energy/ha-hemm"
-Repository = "https://github.com/hemm-energy/ha-hemm"
+Homepage = "https://github.com/hemm-ems/ha-hemm"
+Repository = "https://github.com/hemm-ems/ha-hemm"
 
 [tool.hatch.build.targets.wheel]
 packages = ["custom_components/hemm"]

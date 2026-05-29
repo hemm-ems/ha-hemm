@@ -115,7 +115,7 @@ def _start_house_container(house: HouseConfig) -> None:
             "pip",
             "install",
             "--quiet",
-            "git+https://github.com/swifty99/hactl_companion.git",
+            "git+https://github.com/hemm-ems/hactl-companion.git",
         ],
         capture_output=True,
         timeout=300,

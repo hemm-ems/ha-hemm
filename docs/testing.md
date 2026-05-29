@@ -12,7 +12,7 @@ ha-hemm's tests are organized into three layers, each with a different scope and
 
 **Unit tests** are the fastest and cheapest. They cover config flows, device flows, coordinator lifecycle, diagnostics, sensor creation, and identification stubs — all running in-process against a simulated HA runtime provided by `pytest-homeassistant-custom-component`. No Docker, no network, no hactl. They run in under 10 seconds and serve as a quick sanity check during development.
 
-**Container tests** are the main event. They start a real Home Assistant instance in a Docker container, install the companion addon inside it, run hactl commands against the running HA, and check the output. These tests are slower (roughly two minutes once Docker images are cached, longer on first pull), but they are the ones that tell us whether the integration actually works in a real HA installation. Every interaction with HA goes through the real [hactl](https://github.com/swifty99/hactl) CLI binary — the same tool a human would use — rather than a purpose-built Python test client.
+**Container tests** are the main event. They start a real Home Assistant instance in a Docker container, install the companion addon inside it, run hactl commands against the running HA, and check the output. These tests are slower (roughly two minutes once Docker images are cached, longer on first pull), but they are the ones that tell us whether the integration actually works in a real HA installation. Every interaction with HA goes through the real [hactl](https://github.com/hemm-ems/hactl) CLI binary — the same tool a human would use — rather than a purpose-built Python test client.
 
 **Pi tests** cover hardware validation on a Raspberry Pi running HA OS. They verify that HEMM performs acceptably under realistic resource constraints (ARM CPU, limited RAM, SD card I/O). These are not automated in CI; they run manually against a physical Pi instance using hactl pointed at the Pi's IP. This layer is planned for Phase 8.
 
@@ -104,7 +104,7 @@ The test stack is defined in `docker-compose.test.yml` and consists of a single 
 │  - ../hemm (bind, ro at /hemm-src)                   │
 │  - configuration.yaml (bind, ro)                     │
 │                                                      │
-│  pip install: hemm core + hactl_companion            │
+│  pip install: hemm core + hactl-companion            │
 │  Companion started as background process             │
 │  SUPERVISOR_TOKEN=integration-test-token-12345       │
 └──────────────────────────────────────────────────────┘
@@ -122,15 +122,15 @@ The test stack is defined in `docker-compose.test.yml` and consists of a single 
 
 **Home Assistant container** (`hemm-ha-test`): Runs the real HA Core image. The hemm custom component is bind-mounted read-only at `/config/custom_components/hemm`. The hemm core library source is mounted at `/hemm-src` and pip-installed into the container (hemm is not yet on PyPI, so HA can't install it from `manifest.json` requirements automatically). A `configuration.yaml` fixture is also bind-mounted.
 
-**Companion** (inside the HA container): The [hactl-companion](https://github.com/swifty99/hactl_companion) is pip-installed into the HA container and started as a background process. It provides YAML filesystem access that HA's REST/WS API doesn't expose (reading `configuration.yaml`, listing config files, template evaluation with filesystem context). It runs on port 9100, exposed to the host. Auth uses a static `SUPERVISOR_TOKEN` set via environment variable.
+**Companion** (inside the HA container): The [hactl-companion](https://github.com/hemm-ems/hactl-companion) is pip-installed into the HA container and started as a background process. It provides YAML filesystem access that HA's REST/WS API doesn't expose (reading `configuration.yaml`, listing config files, template evaluation with filesystem context). It runs on port 9100, exposed to the host. Auth uses a static `SUPERVISOR_TOKEN` set via environment variable.
 
-**hactl binary**: The real [hactl](https://github.com/swifty99/hactl) Go CLI binary, downloaded from GitHub releases to `.bin/hactl`. All test assertions go through this binary via subprocess calls — the same commands a human developer would use. The hactl `.env` includes `COMPANION_URL=http://127.0.0.1:9100` so hactl auto-discovers the companion.
+**hactl binary**: The real [hactl](https://github.com/hemm-ems/hactl) Go CLI binary, downloaded from GitHub releases to `.bin/hactl`. All test assertions go through this binary via subprocess calls — the same commands a human developer would use. The hactl `.env` includes `COMPANION_URL=http://127.0.0.1:9100` so hactl auto-discovers the companion.
 
 ### Container lifecycle (what `make docker-up` does)
 
 1. `docker compose up -d --wait` starts the HA container and waits for it to be healthy
 2. `pip install /hemm-src` inside the container installs the hemm core library
-3. `pip install git+https://github.com/swifty99/hactl_companion.git` installs the companion
+3. `pip install git+https://github.com/hemm-ems/hactl-companion.git` installs the companion
 4. `docker restart hemm-ha-test` restarts HA so it picks up the hemm package
 5. `docker compose up -d --wait` waits for HA healthy again
 6. Companion started as background process (`SUPERVISOR_TOKEN=... python3 -m companion`)
@@ -158,7 +158,7 @@ Every test file exercises a distinct area of the integration through the real ha
 | Test file | Tests | What it checks |
 |---|---|---|
 | `test_container.py` | 14 | Core integration lifecycle: HA healthy, hactl version, config flow setup, integration loaded, entities visible, reload works, no error logs, add all 7 device types via options flow |
-| `test_hactl_companion.py` | 8 | Companion features via hactl: template evaluation (simple + states + invalid), script listing, automation listing, service calls |
+| Companion tests | 8 | Companion features via hactl: template evaluation (simple + states + invalid), script listing, automation listing, service calls |
 | `test_hactl_config.py` | 13 | Config flow lifecycle: flow start returns form, data schema present, flow inspect, flow creates entry, abort on duplicate, config entries listing, entry data validation, options flow start/add device/add battery/safe_default required, reload keeps entry, config check passes |
 | `test_hactl_entities.py` | 11 | Entity discovery: domain sensor listing, hemm pattern matching, all entities accessible, per-device sensors (battery 3 sensors, EV charger sensors), entity show/full/naming/history/related/anomalies (6 skipped — see Honest Gaps) |
 | `test_hactl_health.py` | 9 | System health: HA running, version reporting, hactl binary version, custom component visibility via `cc ls` and `cc logs`, error log summary, component log filter, no unresolved hemm issues |
@@ -180,7 +180,7 @@ result = hactl.config_flow_start("hemm")                # hactl config flow-star
 
 All methods return `HactlOutput` with `.success`, `.stdout`, `.stderr`, and `.json_data`. Tests assert against the parsed JSON.
 
-**One exception**: `config_entries()` queries the HA REST API directly (via urllib) because hactl does not yet have a `config entries` command. This is tracked as [hactl issue #1](https://github.com/swifty99/hactl/issues) in [ISSUES_HACTL_COMPANION.md](ISSUES_HACTL_COMPANION.md).
+**One exception**: `config_entries()` queries the HA REST API directly (via urllib) because hactl does not yet have a `config entries` command. This is tracked as [hactl issue #1](https://github.com/hemm-ems/hactl/issues) in [ISSUES_HACTL_COMPANION.md](ISSUES_HACTL_COMPANION.md).
 
 ### Fixtures
 
@@ -397,7 +397,7 @@ uv run pytest
 docker compose -f docker-compose.test.yml up -d --wait
 # Wait for HA healthy...
 docker exec hemm-ha-test pip install /hemm-src
-docker exec hemm-ha-test pip install git+https://github.com/swifty99/hactl_companion.git
+docker exec hemm-ha-test pip install git+https://github.com/hemm-ems/hactl-companion.git
 docker restart hemm-ha-test
 docker compose -f docker-compose.test.yml up -d --wait
 # Start companion inside HA container
@@ -414,7 +414,7 @@ The `hactl_binary` pytest fixture automatically downloads the latest hactl relea
 
 1. Checks `.bin/hactl` (project-local, from `make install-hactl`)
 2. Checks PATH (system-wide install)
-3. Downloads latest release from `https://github.com/swifty99/hactl/releases/latest/download/`
+3. Downloads latest release from `https://github.com/hemm-ems/hactl/releases/latest/download/`
 
 To install manually:
 
@@ -423,7 +423,7 @@ To install manually:
 make install-hactl
 
 # Via go install (if Go is installed)
-go install github.com/swifty99/hactl/cmd/hactl@latest
+go install github.com/hemm-ems/hactl/cmd/hactl@latest
 
 # Manual download (see Makefile install-hactl target for platform-specific commands)
 ```
@@ -463,7 +463,7 @@ The pipeline has three jobs:
 
 **Lint** runs `ruff check` and `ruff format --check` on all source files. A formatting or style failure blocks merge.
 
-**Unit Tests** runs `uv run pytest` against a Python version matrix (3.12, 3.13). This installs the hemm core library from GitHub (`git+https://github.com/swifty99/hemm.git`) since it's not on PyPI yet. Each matrix entry runs independently.
+**Unit Tests** runs `uv run pytest` against a Python version matrix (3.12, 3.13). This installs the hemm core library from GitHub (`git+https://github.com/hemm-ems/hemm.git`) since it's not on PyPI yet. Each matrix entry runs independently.
 
 **Container Tests** runs the full container test suite against a matrix of HA versions. This starts the Docker Compose stack, pre-installs hemm into the container, and runs `uv run pytest tests/integration/ -m container`. The HA version matrix includes:
 

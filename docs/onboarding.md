@@ -367,7 +367,7 @@ automation:
 
 HACS support is coming soon. For now, install manually:
 
-1. Download the [latest release](https://github.com/swifty99/ha-hemm/releases/latest) and unzip it.
+1. Download the [latest release](https://github.com/hemm-ems/ha-hemm/releases/latest) and unzip it.
 2. Copy the `custom_components/hemm/` directory into your HA configuration directory at `config/custom_components/hemm/`. You can do this via the [File Editor add-on](https://www.home-assistant.io/integrations/file_editor/), a Samba share, or SFTP — no SSH required.
 3. Restart Home Assistant. HA automatically installs the `hemm` Python library on first load.
 

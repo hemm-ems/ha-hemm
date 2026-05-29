@@ -12,7 +12,7 @@ Only the latest release is supported with security updates.
 ## Reporting a Vulnerability
 
 Please report security vulnerabilities through GitHub's
-[Private Vulnerability Reporting](https://github.com/swifty99/ha-hemm/security/advisories/new).
+[Private Vulnerability Reporting](https://github.com/hemm-ems/ha-hemm/security/advisories/new).
 
 Do not open a public issue for security vulnerabilities.
 

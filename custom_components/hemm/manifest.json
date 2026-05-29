@@ -1,9 +1,9 @@
 {
   "domain": "hemm",
   "name": "HEMM Energy Optimizer",
-  "codeowners": ["@hemm-energy"],
+  "codeowners": ["@kipp-ing"],
   "config_flow": true,
-  "documentation": "https://github.com/swifty99/ha-hemm",
+  "documentation": "https://github.com/hemm-ems/ha-hemm",
   "integration_type": "hub",
   "iot_class": "local_push",
   "requirements": ["hemm==2026.5.0"],

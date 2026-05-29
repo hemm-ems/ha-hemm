@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 30
 
 # GitHub release URL pattern
-HACTL_RELEASE_URL = "https://github.com/swifty99/hactl/releases/latest/download"
+HACTL_RELEASE_URL = "https://github.com/hemm-ems/hactl/releases/latest/download"
 
 
 @dataclass
@@ -376,7 +376,7 @@ def get_hactl_download_url() -> str:
     import urllib.request
 
     # Resolve latest release tag
-    api_url = "https://api.github.com/repos/swifty99/hactl/releases/latest"
+    api_url = "https://api.github.com/repos/hemm-ems/hactl/releases/latest"
     req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(req) as resp:
         import json as _json
@@ -399,7 +399,7 @@ def get_hactl_download_url() -> str:
         arch = "arm64" if platform.machine() == "aarch64" else "amd64"
         asset_name = f"hactl_{version}_linux_{arch}.tar.gz"
 
-    return f"https://github.com/swifty99/hactl/releases/download/{tag}/{asset_name}"
+    return f"https://github.com/hemm-ems/hactl/releases/download/{tag}/{asset_name}"
 
 
 def get_hactl_binary_name() -> str:
