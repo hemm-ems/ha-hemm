@@ -6,6 +6,6 @@
   "documentation": "https://github.com/hemm-ems/ha-hemm",
   "integration_type": "hub",
   "iot_class": "local_push",
-  "requirements": ["hemm==2026.5.0"],
-  "version": "2026.5.0"
+  "requirements": ["hemm==2026.5.2"],
+  "version": "2026.5.2"
 }

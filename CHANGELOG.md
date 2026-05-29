@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2026.5.2] - 2026-05-29
+
 ### Added
 
 - **Example Automations** (replaces blueprints):
@@ -22,6 +24,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Manifest pin now targets `hemm==2026.5.2`, and the integration `version` field matches that release.
 - **Zeitdynamik-Erweiterung (Sonnenproblem)**:
   - `control_class` field in device configuration (`passive` / `reactive` / `planned`, default: `planned`)
   - `sensor.hemm_<device>_reason` — per-device reason sensor (enum: pv_surplus, cheap_grid, constraint, idle, manual, safety_default)
