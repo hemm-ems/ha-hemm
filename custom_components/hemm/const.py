@@ -114,6 +114,7 @@ SERVICE_REMOVE_CONSTRAINT = "remove_constraint"
 SERVICE_BUMP_PRIORITY = "bump_priority"
 SERVICE_TICK = "tick"
 SERVICE_FORCE_WATCHDOG = "force_watchdog"
+SERVICE_ACTUATE_NOW = "actuate_now"
 
 # Event names
 EVENT_ITERATION_COMPLETE = f"{DOMAIN}_iteration_complete"

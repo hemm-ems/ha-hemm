@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 
@@ -36,6 +37,12 @@ def _reset_phase7_helpers(hactl: Hactl) -> None:
     hactl.svc_call("input_number.set_value", {"entity_id": "input_number.hemm_phase7_safe_calls", "value": 0})
     hactl.svc_call("input_boolean.turn_off", {"entity_id": "input_boolean.hemm_phase7_verify_pass"})
     hactl.svc_call("input_boolean.turn_off", {"entity_id": "input_boolean.hemm_phase7_verify_fail"})
+
+
+def _settle_reload_solve_and_reset(hactl: Hactl) -> None:
+    """Let the options-flow reload solve settle, then reset test counters."""
+    time.sleep(2)
+    _reset_phase7_helpers(hactl)
 
 
 def _counter(hactl: Hactl, entity_id: str) -> int:
@@ -169,16 +176,17 @@ class TestPhase7ActuationContainer:
             action_script="script.hemm_phase7_active_fail",
             verify_entity="input_boolean.hemm_phase7_verify_fail",
         )
+        _settle_reload_solve_and_reset(hactl)
         active_before = _counter(hactl, "input_number.hemm_phase7_active_calls")
         safe_before = _counter(hactl, "input_number.hemm_phase7_safe_calls")
 
-        result = hactl.svc_call("hemm.replan", {"device_filter": [device_id]})
+        result = hactl.svc_call("hemm.actuate_now", {"device_id": device_id, "action_name": "active"})
 
         assert result.success
         active_after = _counter(hactl, "input_number.hemm_phase7_active_calls")
         safe_after = _counter(hactl, "input_number.hemm_phase7_safe_calls")
-        assert active_after - active_before >= 2
-        assert safe_after - safe_before >= 1
+        assert active_after - active_before == 2
+        assert safe_after - safe_before == 1
         assert _latest_audit_outcome(hactl) == "safe_default"
         issues = hactl.issues()
         assert "actuation_verify_failed" in (issues.stdout + str(issues.json_data))
@@ -216,9 +224,13 @@ class TestPhase7ActuationContainer:
             action_script="script.hemm_phase7_active_pass",
             verify_entity="input_boolean.hemm_phase7_verify_pass",
         )
+        _settle_reload_solve_and_reset(hactl)
         active_before = _counter(hactl, "input_number.hemm_phase7_active_calls")
 
-        result = hactl.svc_call("hemm.replan", {"dry_run": True, "device_filter": [device_id]})
+        result = hactl.svc_call(
+            "hemm.actuate_now",
+            {"device_id": device_id, "action_name": "active", "dry_run": True},
+        )
 
         assert result.success
         active_after = _counter(hactl, "input_number.hemm_phase7_active_calls")
@@ -237,6 +249,7 @@ class TestPhase7ActuationContainer:
             action_script="script.hemm_phase7_active_pass",
             verify_entity="input_boolean.hemm_phase7_verify_pass",
         )
+        _settle_reload_solve_and_reset(hactl)
         hactl.svc_call(
             "hemm.add_constraint_window",
             {
@@ -249,13 +262,13 @@ class TestPhase7ActuationContainer:
         active_before = _counter(hactl, "input_number.hemm_phase7_active_calls")
         safe_before = _counter(hactl, "input_number.hemm_phase7_safe_calls")
 
-        result = hactl.svc_call("hemm.replan", {"device_filter": [device_id]})
+        result = hactl.svc_call("hemm.actuate_now", {"device_id": device_id, "action_name": "active"})
 
         assert result.success
         active_after = _counter(hactl, "input_number.hemm_phase7_active_calls")
         safe_after = _counter(hactl, "input_number.hemm_phase7_safe_calls")
         assert active_after - active_before == 0
-        assert safe_after - safe_before >= 1
+        assert safe_after - safe_before == 1
         assert _latest_audit_outcome(hactl) == "safe_default"
 
     @pytest.mark.req("010:FR-005")
@@ -294,10 +307,11 @@ class TestPhase7ActuationContainer:
             action_script="script.hemm_phase7_active_pass",
             verify_entity="input_boolean.hemm_phase7_verify_pass",
         )
+        _settle_reload_solve_and_reset(hactl)
         hactl.svc_call("switch.turn_on", {"entity_id": _find_override_switch(hactl, device_name)})
         active_before = _counter(hactl, "input_number.hemm_phase7_active_calls")
 
-        result = hactl.svc_call("hemm.replan", {"device_filter": [device_id]})
+        result = hactl.svc_call("hemm.actuate_now", {"device_id": device_id, "action_name": "active"})
 
         assert result.success
         active_after = _counter(hactl, "input_number.hemm_phase7_active_calls")

@@ -1,7 +1,7 @@
 """Comprehensive tests for HEMM services, coordinator, and Phase 6 features.
 
 Covers:
-- All 9 services (registration, unregistration, dry-run)
+- All 10 services (registration, unregistration, dry-run)
 - Constraint lifecycle (add → bump → remove) using real hemm_core types
 - Coordinator state transitions and properties
 - Event firing (all 5 types)
@@ -45,6 +45,7 @@ from custom_components.hemm.const import (
     EVENT_CONSTRAINT_ADDED,
     EVENT_CONSTRAINT_RESOLVED,
     EVENT_SOLVER_SWITCHED,
+    SERVICE_ACTUATE_NOW,
     SERVICE_ADD_CONSTRAINT,
     SERVICE_BUMP_PRIORITY,
     SERVICE_FORCE_WATCHDOG,
@@ -145,6 +146,7 @@ class TestServiceRegistration:
             SERVICE_BUMP_PRIORITY,
             SERVICE_TICK,
             SERVICE_FORCE_WATCHDOG,
+            SERVICE_ACTUATE_NOW,
         ):
             assert hass.services.has_service(DOMAIN, svc), f"Service {svc} not registered"
 
@@ -161,6 +163,7 @@ class TestServiceRegistration:
             SERVICE_BUMP_PRIORITY,
             SERVICE_SET_PRICE_CURVE,
             SERVICE_FORCE_WATCHDOG,
+            SERVICE_ACTUATE_NOW,
         ):
             assert not hass.services.has_service(DOMAIN, svc)
 

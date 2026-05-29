@@ -8,11 +8,14 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
+from .actuator import ActuationDecision
 from .const import (
     ATTR_DRY_RUN,
     DOMAIN,
+    SERVICE_ACTUATE_NOW,
     SERVICE_ADD_CONSTRAINT,
     SERVICE_BUMP_PRIORITY,
     SERVICE_FORCE_WATCHDOG,
@@ -25,6 +28,7 @@ from .const import (
     SOLVER_BACKENDS,
 )
 from .coordinator import HemmCoordinator
+from .manifest_builder import build_all_manifests
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -152,6 +156,15 @@ FORCE_WATCHDOG_SCHEMA = vol.Schema(
     }
 )
 
+ACTUATE_NOW_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): cv.string,
+        vol.Optional("action_name", default="active"): cv.string,
+        vol.Optional(ATTR_DRY_RUN, default=False): cv.boolean,
+        vol.Optional("pre_call_check", default=True): cv.boolean,
+    }
+)
+
 
 async def async_register_services(hass: HomeAssistant) -> None:
     """Register all HEMM services."""
@@ -267,6 +280,35 @@ async def async_register_services(hass: HomeAssistant) -> None:
         fired = await coordinator.async_check_watchdog()
         _LOGGER.info("Force watchdog complete: fired=%s stale_for=%s", fired, stale_for)
 
+    async def handle_actuate_now(call: ServiceCall) -> None:
+        """Handle hemm.actuate_now service call — test/debug deterministic actuation."""
+        coordinator = _get_coordinator(hass)
+        device_id = call.data["device_id"]
+        action_name = call.data["action_name"]
+        manifests = build_all_manifests(coordinator.config_entry.data.get("devices", []))
+        manifest = next((m for m in manifests if m.device_id == device_id), None)
+        if manifest is None:
+            raise HomeAssistantError(f"Unknown HEMM device_id: {device_id}")
+
+        action = getattr(manifest, "actions", {}).get(action_name)
+        if action is None:
+            raise HomeAssistantError(f"Unknown HEMM action {action_name!r} for device_id {device_id}")
+
+        decision = ActuationDecision(
+            device_id=device_id,
+            action=action,
+            safe_default=manifest.safe_default,
+            plan_mode=action_name,
+        )
+        pre_call_check = coordinator._async_pre_call_check if call.data["pre_call_check"] else None
+        await coordinator.actuator.async_actuate(
+            decision,
+            actuation_enabled=coordinator.actuation_enabled,
+            dry_run=call.data[ATTR_DRY_RUN],
+            pre_call_check=pre_call_check,
+        )
+        coordinator.async_set_updated_data(coordinator._build_data())
+
     hass.services.async_register(DOMAIN, SERVICE_REPLAN, handle_replan, schema=REPLAN_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SIMULATE, handle_simulate, schema=SIMULATE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SET_PRICE_CURVE, handle_set_price_curve, schema=SET_PRICE_CURVE_SCHEMA)
@@ -278,6 +320,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_BUMP_PRIORITY, handle_bump_priority, schema=BUMP_PRIORITY_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_TICK, handle_tick, schema=TICK_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_FORCE_WATCHDOG, handle_force_watchdog, schema=FORCE_WATCHDOG_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_ACTUATE_NOW, handle_actuate_now, schema=ACTUATE_NOW_SCHEMA)
 
 
 async def async_unregister_services(hass: HomeAssistant) -> None:
@@ -292,5 +335,6 @@ async def async_unregister_services(hass: HomeAssistant) -> None:
         SERVICE_BUMP_PRIORITY,
         SERVICE_TICK,
         SERVICE_FORCE_WATCHDOG,
+        SERVICE_ACTUATE_NOW,
     ):
         hass.services.async_remove(DOMAIN, service)

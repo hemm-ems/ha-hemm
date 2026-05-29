@@ -241,6 +241,28 @@
           "description": "Backdate the last successful solve by this many seconds before checking the watchdog."
         }
       }
+    },
+    "actuate_now": {
+      "name": "Actuate now",
+      "description": "Test/debug service that actuates one named manifest action for one device.",
+      "fields": {
+        "device_id": {
+          "name": "Device ID",
+          "description": "HEMM device identifier to actuate."
+        },
+        "action_name": {
+          "name": "Action name",
+          "description": "Named manifest action to actuate."
+        },
+        "dry_run": {
+          "name": "Dry run",
+          "description": "Evaluate without calling the script."
+        },
+        "pre_call_check": {
+          "name": "Pre-call check",
+          "description": "Run HEMM's pre-call safety check before actuation."
+        }
+      }
     }
   }
 }
