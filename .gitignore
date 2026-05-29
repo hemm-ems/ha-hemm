@@ -14,4 +14,4 @@ htmlcov/
 venv/
 *.so
 .DS_Store
-.bin/.ha_test_token
+.bin/

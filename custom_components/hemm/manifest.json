@@ -5,6 +5,7 @@
   "config_flow": true,
   "documentation": "https://github.com/hemm-ems/ha-hemm",
   "integration_type": "hub",
+  "issue_tracker": "https://github.com/hemm-ems/ha-hemm/issues",
   "iot_class": "local_push",
   "requirements": ["hemm==2026.5.2"],
   "version": "2026.5.2"

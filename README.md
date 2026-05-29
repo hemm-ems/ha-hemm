@@ -16,6 +16,7 @@ Home Assistant integration for the [HEMM](https://github.com/hemm-ems/hemm) ener
 - Solver outputs are `sensor.hemm_*` entities. Actuation is via HA scripts you write. No custom frontend.
 - Every device must declare a `safe_default` script. HEMM calls it if the coordinator crashes or times out. It is the answer to "what happens if HEMM dies at 3 AM?"
 - Every service accepts `dry_run: true`. The solver runs and fires events, but nothing is actuated.
+- Today, HEMM only writes `sensor.hemm_*` plan entities; actuation plus verification/watchdog behavior is your HA automation's responsibility, while the built-in actuator/verification engine is a planned follow-up and has not shipped yet.
 - Constraints carry numeric `priority_penalty` values. When two constraints compete for the same power budget, the higher number wins. The resolution is logged and inspectable.
 - Zero vendor-specific code in the HEMM core. Vendor quirks (defrost cycles, legionella prevention, utility lockout windows) belong in HA automations, not in the energy manager.
 
@@ -64,9 +65,13 @@ Each file is a standard HA automation (id, alias, trigger, action) that you can 
 
 ## Installation
 
-### HACS (coming soon)
+### HACS
 
-HACS support is in progress. When available, add `https://github.com/hemm-ems/ha-hemm` as a custom repository in HACS, install "HEMM Energy Optimizer", restart Home Assistant, and add the integration via Settings → Integrations → Add → HEMM.
+1. In HACS, open the ⋮ menu and choose Custom repositories.
+2. Add `https://github.com/hemm-ems/ha-hemm` with category `Integration`.
+3. Install "HEMM Energy Optimizer".
+4. Restart Home Assistant.
+5. Go to Settings → Devices & Services → Add Integration → HEMM.
 
 ### Manual
 
