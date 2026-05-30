@@ -1,4 +1,4 @@
-.PHONY: test test-container test-pi test-slow ci ci-full lint format install-hactl docker-up docker-down docker-reset sim-up sim-setup sim-down sim-all sim-status sim-test check-clock branding-audit \
+.PHONY: test test-container test-container-quick test-container-sc test-pi test-slow ci ci-full lint format install-hactl docker-up docker-down docker-reset sim-up sim-setup sim-down sim-all sim-status sim-test check-clock branding-audit \
 	warp-up warp-down warp-build warp-logs warp-shell warp-set-speed warp-date warp-clock test-warp test-warp-stress
 
 ## Default: fast unit tests only
@@ -15,6 +15,12 @@ test-container: install-hactl docker-up
 ## Container tests against already-running stack (faster iteration)
 test-container-quick: install-hactl
 	SKIP_DOCKER_COMPOSE=1 uv run pytest -m container --tb=short -q
+
+## Per-SC run against already-running stack. Usage: make test-container-sc SC=SC-005
+## Pairs with `tools/compress_container_log.py` (pipe stderr/stdout into it).
+test-container-sc: install-hactl
+	@[ -n "$(SC)" ] || (echo "Usage: make test-container-sc SC=SC-005" && exit 2)
+	SKIP_DOCKER_COMPOSE=1 uv run pytest -m container -k "$(SC)" --tb=short -q
 
 ## Pi hardware tests (manual / self-hosted runner)
 test-pi:

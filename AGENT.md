@@ -72,7 +72,9 @@ Two complementary mechanisms:
 - `make test` — fast unit tests (default pytest run)
 - `make ci` — lint + check-clock + test
 - `make ci-full` — ci + container tests
-- `make test-container` — container tests only
+- `make test-container` — container tests only (full stack lifecycle)
+- `make test-container-quick` — container tests against an already-running stack
+- `make test-container-sc SC=<id>` — single SC against an already-running stack (e.g. `SC=SC-005`); pair with `tools/compress_container_log.py` for failures-only output
 - `make test-warp` — Docker-level time-warp smoke tests
 - `make warp-up` / `warp-down` / `warp-logs` / `warp-shell` — manage the warp stack
 - `make test-slow` — long-running sims
