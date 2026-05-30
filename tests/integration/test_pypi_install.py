@@ -45,12 +45,7 @@ def test_manifest_pinned_core_installs_from_pypi_and_hub_loads(request: pytest.F
     assert result.success
     assert result.json_data.get("type") in ("create_entry", "abort")
 
-    result = hactl.config_entries()
-    assert result.success
-    entries = _entries_from_result(result.json_data)
-    hemm_entries = [entry for entry in entries if entry.get("domain") == "hemm"]
-    assert hemm_entries
-    assert hemm_entries[0].get("state") == "loaded"
+    _wait_for_hemm_entry_loaded(hactl)
 
 
 def _pypi_has_version(package: str, version: str) -> bool:
@@ -128,3 +123,22 @@ def _entries_from_result(data: dict[str, Any] | list[Any] | None) -> list[dict[s
         entries = data.get("entries", [])
         return [entry for entry in entries if isinstance(entry, dict)]
     return []
+
+
+def _wait_for_hemm_entry_loaded(hactl: Any, timeout: float = 60.0) -> None:
+    """`/api/` returning 200 only means HA is responsive; custom-integration
+    setup can still be in flight. Poll the config-entries API until the HEMM
+    entry reaches state=='loaded' (or fail with the last observed state)."""
+    deadline = time.monotonic() + timeout
+    last_state: str | None = None
+    while time.monotonic() < deadline:
+        result = hactl.config_entries()
+        if result.success:
+            entries = _entries_from_result(result.json_data)
+            hemm_entries = [entry for entry in entries if entry.get("domain") == "hemm"]
+            if hemm_entries:
+                last_state = hemm_entries[0].get("state")
+                if last_state == "loaded":
+                    return
+        time.sleep(2)
+    raise AssertionError(f"HEMM config entry did not reach state=='loaded' (last={last_state!r})")

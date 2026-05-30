@@ -110,15 +110,25 @@ def _add_phase7_battery(hactl: Hactl, entry_id: str, *, name: str, action_script
 
 
 def _audit_entries(hactl: Hactl) -> list[dict]:
+    """Aggregate audit entries across ALL per-device actuation audit sensors,
+    sorted by entry timestamp. Phase 7 produces one audit sensor per device,
+    and `hactl.ent_ls` ordering is not stable across tests; aggregating makes
+    `_latest_audit_outcome` and SC-008 order-independent."""
     result = hactl.ent_ls(pattern="actuation", domain="sensor")
     assert result.json_data, "No actuation audit sensor found"
     entities = result.json_data if isinstance(result.json_data, list) else []
-    entity_id = entities[0].get("entity_id", entities[0].get("id", ""))
-    show = hactl.ent_show(entity_id, full=True)
-    attributes = (show.json_data or {}).get("attributes", {})
-    entries = attributes.get("entries", [])
-    assert isinstance(entries, list), "Actuation audit sensor has no structured entries attribute"
-    return entries
+    all_entries: list[dict] = []
+    for entity in entities:
+        entity_id = entity.get("entity_id", entity.get("id", ""))
+        if not entity_id:
+            continue
+        show = hactl.ent_show(entity_id, full=True)
+        attributes = (show.json_data or {}).get("attributes", {})
+        entries = attributes.get("entries", [])
+        if isinstance(entries, list):
+            all_entries.extend(entries)
+    all_entries.sort(key=lambda e: e.get("timestamp", ""))
+    return all_entries
 
 
 def _latest_audit_outcome(hactl: Hactl) -> str:
@@ -245,7 +255,11 @@ class TestPhase7ActuationContainer:
     def test_sc005_pre_call_failure_falls_to_safe_default(self, hactl: Hactl) -> None:
         entry_id = _ensure_hemm_entry(hactl)
         _reset_phase7_helpers(hactl)
-        _set_actuation(hactl, entry_id, enabled=True)
+        # Disable actuation so leftover devices from earlier SCs (e.g. SC-002's
+        # Failing Battery) can't fire background reload-solves that pollute the
+        # active_calls counter. FR-004's pre-call safety re-check still triggers
+        # on the explicit `actuate_now` below — same pattern as SC-004.
+        _set_actuation(hactl, entry_id, enabled=False)
         device_id = _add_phase7_battery(
             hactl,
             entry_id,
