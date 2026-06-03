@@ -138,6 +138,7 @@ class DeviceType(StrEnum):
     PV_FORECAST = "pv_forecast"
     EV_CHARGER = "ev_charger"
     PASSIVE_LOAD = "passive_load"
+    POOL_PUMP = "pool_pump"
 
 
 class ConfigTier(StrEnum):
@@ -156,6 +157,7 @@ DEVICE_PRO_SUPPORT: set[str] = {
     DeviceType.PV_FORECAST,
     DeviceType.EV_CHARGER,
     DeviceType.PASSIVE_LOAD,
+    DeviceType.POOL_PUMP,
 }
 
 
