@@ -1,0 +1,9 @@
+#!/bin/sh
+# Pre-push guard: run the local CI gate before every push, so a red check is
+# caught here in seconds instead of on GitHub minutes later. Mirrors what the
+# `Lint` + `Unit Tests` workflows run.
+#
+# Enable once per clone:   make hooks
+# Skip a single push:      git push --no-verify
+echo "pre-push: running 'make ci' (skip with --no-verify)..."
+make ci
