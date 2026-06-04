@@ -45,6 +45,22 @@ def _settle_reload_solve_and_reset(hactl: Hactl) -> None:
     _reset_phase7_helpers(hactl)
 
 
+def _fresh_hemm_entry(hactl: Hactl) -> str:
+    """Delete any existing HEMM entry and create a clean one.
+
+    SCs asserting exact counter deltas / audit contents need a pristine entry:
+    no leftover devices firing on reload-solve, empty audit log.
+    """
+    result = hactl.config_entries()
+    data = result.json_data
+    entries = data if isinstance(data, list) else (data or {}).get("entries", [])
+    for entry in entries:
+        if entry.get("domain") == "hemm":
+            hactl.config_entry_delete(entry["entry_id"])
+    time.sleep(2)
+    return _ensure_hemm_entry(hactl)
+
+
 def _counter(hactl: Hactl, entity_id: str) -> int:
     result = hactl.ent_show(entity_id)
     return int(float(result.json_data.get("state", 0)))
@@ -257,14 +273,8 @@ class TestPhase7ActuationContainer:
         assert _latest_audit_outcome(hactl) == "dry_run"
 
     @pytest.mark.req("010:FR-004")
-    @pytest.mark.skip(
-        reason="Phase 7 order-independence — SC-002's Failing Battery leaks into "
-        "SC-005's reload-solve and inflates active_calls. enabled=False short-circuits "
-        "the pre-call path so safe_calls stays 0. Needs leftover-device cleanup; "
-        "tracked in next-session-streamlined-handoff.md."
-    )
     def test_sc005_pre_call_failure_falls_to_safe_default(self, hactl: Hactl) -> None:
-        entry_id = _ensure_hemm_entry(hactl)
+        entry_id = _fresh_hemm_entry(hactl)
         _reset_phase7_helpers(hactl)
         _set_actuation(hactl, entry_id, enabled=True)
         device_id = _add_phase7_battery(
@@ -351,13 +361,20 @@ class TestPhase7ActuationContainer:
         assert _latest_audit_outcome(hactl) == "skipped:override"
 
     @pytest.mark.req("010:FR-007")
-    @pytest.mark.skip(
-        reason="Phase 7 order-independence — in-memory audit log is wiped on every "
-        "config-entry reload, so when SC-008 runs after SC-007's add+reload only "
-        "skipped:override is present. Engine needs persistent audit (or per-device "
-        "filter); tracked in next-session-streamlined-handoff.md."
-    )
     def test_sc008_audit_log_has_outcomes_without_raw_entity_values(self, hactl: Hactl) -> None:
+        entry_id = _fresh_hemm_entry(hactl)
+        _reset_phase7_helpers(hactl)
+        _set_actuation(hactl, entry_id, enabled=True)
+        device_id = _add_phase7_battery(
+            hactl,
+            entry_id,
+            name="Phase7 Audit Battery",
+            action_script="script.hemm_phase7_active_pass",
+            verify_entity="input_boolean.hemm_phase7_verify_pass",
+        )
+        _settle_reload_solve_and_reset(hactl)
+        result = hactl.svc_call("hemm.actuate_now", {"device_id": device_id, "action_name": "active"})
+        assert result.success
         entries = _audit_entries(hactl)
         output = json.dumps(entries)
 
