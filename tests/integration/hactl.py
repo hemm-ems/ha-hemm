@@ -208,6 +208,30 @@ class Hactl:
         except Exception as e:
             return HactlOutput(returncode=1, stdout="", stderr=str(e))
 
+    def config_entry_delete(self, entry_id: str) -> HactlOutput:
+        """Delete a config entry via HA REST API (DELETE /api/config/config_entries/entry/{id})."""
+        import urllib.request
+
+        env = self._read_env()
+        ha_url = env.get("HA_URL", "http://localhost:8123").replace("localhost", "127.0.0.1")
+        ha_token = env.get("HA_TOKEN", "")
+        url = f"{ha_url}/api/config/config_entries/entry/{entry_id}"
+        req = urllib.request.Request(
+            url,
+            method="DELETE",
+            headers={
+                "Authorization": f"Bearer {ha_token}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                raw = resp.read().decode()
+                data = json.loads(raw) if raw else {}
+                return HactlOutput(returncode=0, stdout=raw, stderr="", json_data=data)
+        except Exception as e:
+            return HactlOutput(returncode=1, stdout="", stderr=str(e))
+
     def _read_env(self) -> dict[str, str]:
         """Read the .env file from the instance directory."""
         env_file = Path(self._dir) / ".env"
