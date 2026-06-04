@@ -18,6 +18,7 @@ Home Assistant integration for the [HEMM](https://github.com/hemm-ems/hemm) ener
 - Every service accepts `dry_run: true`. The solver runs and fires events, but nothing is actuated.
 - Today, HEMM only writes `sensor.hemm_*` plan entities; actuation plus verification/watchdog behavior is your HA automation's responsibility, while the built-in actuator/verification engine is a planned follow-up and has not shipped yet.
 - Constraints carry numeric `priority_penalty` values. When two constraints compete for the same power budget, the higher number wins. The resolution is logged and inspectable.
+- Devices are plug-and-play: every manifest compiles to a fixed set of physics primitives (source / sink / storage / converter / node), so a new device type (pool pump, chiller, vehicle-to-home EV) is a new manifest, never new solver code. Both of HEMM's solver backends read the same compiled components.
 - Zero vendor-specific code in the HEMM core. Vendor quirks (defrost cycles, legionella prevention, utility lockout windows) belong in HA automations, not in the energy manager.
 
 ## Why HEMM

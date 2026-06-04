@@ -6,7 +6,7 @@ Decisions made during implementation that deviate from or refine the original pl
 
 - **Pydantic v2 instead of TypedDicts** — runtime validation, JSON Schema export, discriminated unions, serialization all in one. Better fit for LLM-writable declarative manifests.
 - **Plan-change penalty is L1 (linear) not quadratic** — HiGHS (LP/MILP) doesn't support quadratic objectives. Absolute-value penalty via auxiliary variables achieves the same anti-short-cycling effect.
-- **Thermal constraints (ReachMinTempOnce, HoldTempBand) are placeholders** — full thermal modeling (U-value, thermal mass, solar gain) deferred. Solver accepts constraints but doesn't enforce physics yet.
+- **Thermal constraints (ReachMinTempOnce, HoldTempBand) are enforced via the `node` primitive** — a room/tank compiles to a thermal node with RC dynamics (U-value, thermal mass) and the constraint binds on that node's temperature state. Solar gain is still simplified. A thermal constraint aimed at a device with no thermal node is now rejected at validation, not silently ignored.
 - **Consumer models are greedy/heuristic, not sub-problem MILP** — sort slots by effective cost, allocate cheaply. Sufficient for distributed protocol convergence. Full sub-problem solvers can swap in later.
 
 ## HA Integration

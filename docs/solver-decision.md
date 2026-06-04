@@ -3,6 +3,40 @@
 **Date:** 2026-05-11  
 **Decision:** Ship Backend A (Central MILP) as default; keep Backend B (Distributed) as experimental option.
 
+---
+
+## Update — 2026-06-03: the primitive component model (spec 003)
+
+The generic-entities refactor (spec `003`) made the **energy-role taxonomy load-bearing**:
+both backends now build from a shared set of five primitives (`source`/`sink`/`storage`/
+`converter`/`node`) via `manifest.to_components()`, instead of dispatching on concrete Python
+manifest types. Backend B's per-type `ConsumerModel` factory was replaced by per-primitive
+consumers (storage→arbitrage/deadline, converter→factor-weighted price, sink→cheapest-slots,
+source→forecast); the two solver files now contain **no named-device-type dispatch**, so a new
+device (e.g. `pool_pump`) plans through both backends with zero solver code (FR-012 thesis).
+
+**Re-running the A/B gate after the refactor changes the picture materially** (the old
+2026-05-11 numbers below were measured on the pre-refactor heuristics, and were further
+distorted by three scenarios whose constraints the old solver *silently ignored* — so Backend A
+was cost-neutral there and the relative gap blew up to 100%+; spec 003 Phase 5 fixed those
+latent scenario bugs):
+
+| Metric | Threshold | 2026-05-11 (pre-refactor) | 2026-06-03 (component model) |
+|--------|-----------|---------------------------|------------------------------|
+| Cost gap (avg B vs A) | < 3% | 96.20% **FAIL** | **1.20% PASS** |
+| Backend B convergence | — | 1/6 | **6/6** |
+| Comfort violations | B ≤ A | 0 worse (PASS) | 0 worse (PASS) |
+| Plan stability | ≤ 1.5× A | 1.00× (PASS) | 1.00× (PASS) |
+
+Backend B now clears two of the three **future-promotion** criteria below (cost gap < 3% ✓,
+convergence ≥ 5/6 ✓); only the speed advantage has narrowed (now ~2× A, not the earlier ~10×).
+**The default-backend decision is unchanged** — Backend A stays default (provably optimal); B is
+no longer *failing* the gate but promoting it to default is a separate, deliberate call.
+
+The historical 2026-05-11 analysis is preserved unedited below.
+
+---
+
 ## Test Protocol
 
 Ran identical scenarios through both backends using `hemm sim compare` across all 6 standard scenarios:

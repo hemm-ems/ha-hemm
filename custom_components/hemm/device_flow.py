@@ -267,6 +267,16 @@ def _build_passive_load_schema(tier: str) -> vol.Schema:
     return vol.Schema(fields)
 
 
+def _build_pool_pump_schema(tier: str) -> vol.Schema:
+    """Build schema for PoolPump configuration."""
+    fields: dict = {
+        vol.Required(CONF_DEVICE_NAME): TextSelector(TextSelectorConfig(type="text")),
+        vol.Required(CONF_MAX_POWER_KW): _number(0.1, 20, 0.1),
+    }
+    fields.update(_safe_default_schema(tier))
+    return vol.Schema(fields)
+
+
 # Registry: device_type -> schema builder
 DEVICE_SCHEMA_BUILDERS: dict[str, Any] = {
     DeviceType.ROOM: _build_room_schema,
@@ -277,6 +287,7 @@ DEVICE_SCHEMA_BUILDERS: dict[str, Any] = {
     DeviceType.PV_FORECAST: _build_pv_forecast_schema,
     DeviceType.EV_CHARGER: _build_ev_charger_schema,
     DeviceType.PASSIVE_LOAD: _build_passive_load_schema,
+    DeviceType.POOL_PUMP: _build_pool_pump_schema,
 }
 
 

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`pool_pump` device type** — a controllable electrical load registered in the config flow and manifest builder; proves the core's primitive component model end-to-end (a new device plans through a real HA replan with zero solver code).
+- **Primitive metadata in the manifest schema** surfaced to the integration (`x-hemm-primitives`), with an integration test asserting existing manifests validate unchanged.
+
+### Changed
+
+- Updated `docs/solver-decision.md`: after the core's primitive-component refactor (spec 003), the distributed backend now clears the A/B gate (~1.2% average cost gap, 6/6 scenarios converge, was ~96% / 1-of-6). Central MILP remains the default; the historical 2026-05-11 record is preserved.
+
 ## [2026.5.2] - 2026-05-29
 
 ### Added

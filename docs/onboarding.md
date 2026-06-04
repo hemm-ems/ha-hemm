@@ -418,7 +418,7 @@ Once dry-runs look right, the coordinator runs automatically every 15 minutes. W
 | | HEMM | EMHASS | Manual (Node-RED / AppDaemon) |
 |---|------|--------|-------------------------------|
 | **Device config** | Declarative manifest (JSON) | YAML config per device | Custom code per device |
-| **Solver** | MILP (optimal) + Distributed (experimental) | Linear programming | Rule-based (heuristic) |
+| **Solver** | MILP (optimal, default) + Distributed (optional, within the A/B gate) | Linear programming | Rule-based (heuristic) |
 | **Actuation** | HA scripts (user-written) | Direct entity calls | Direct entity calls |
 | **Vendor knowledge** | Zero in core — lives in HA automations | Some built-in device models | Whatever you code |
 | **Constraint model** | Time-windowed, priority-weighted, dynamic | Static schedules | Whatever you code |

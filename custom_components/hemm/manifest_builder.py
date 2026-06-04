@@ -162,6 +162,7 @@ def build_manifest(device: dict[str, Any]) -> DeviceManifest:
         DeviceType.PV_FORECAST: _build_pv_forecast,
         DeviceType.EV_CHARGER: _build_ev_charger,
         DeviceType.PASSIVE_LOAD: _build_passive_load,
+        DeviceType.POOL_PUMP: _build_pool_pump,
     }
 
     builder = builders.get(device_type)
@@ -374,4 +375,25 @@ def _build_passive_load(
         **({"control_class": control_class} if control_class else {}),
         typical_daily_kwh=cfg[CONF_TYPICAL_DAILY_KWH],
         load_profile_entity=cfg.get(CONF_LOAD_PROFILE_ENTITY),
+    )
+
+
+def _build_pool_pump(
+    device_id: str,
+    name: str,
+    safe_default: Any,
+    cfg: dict[str, Any],
+    *,
+    control_class: str | None = None,
+    actions: dict[str, Any] | None = None,
+) -> Any:
+    from hemm_core.manifest.types import PoolPumpManifest
+
+    return PoolPumpManifest(
+        device_id=device_id,
+        name=name,
+        safe_default=safe_default,
+        actions=actions or {},
+        **({"control_class": control_class} if control_class else {}),
+        max_power_kw=cfg[CONF_MAX_POWER_KW],
     )
