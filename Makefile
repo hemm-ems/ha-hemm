@@ -1,4 +1,4 @@
-.PHONY: test test-container test-container-quick test-container-sc test-pi test-slow ci ci-full lint format install-hactl docker-up docker-down docker-reset sim-up sim-setup sim-down sim-all sim-status sim-test check-clock branding-audit \
+.PHONY: test test-container test-container-quick test-container-sc test-pi test-slow ci ci-full lint format hooks install-hactl docker-up docker-down docker-reset sim-up sim-setup sim-down sim-all sim-status sim-test check-clock branding-audit \
 	warp-up warp-down warp-build warp-logs warp-shell warp-set-speed warp-date warp-clock test-warp test-warp-stress
 
 ## Default: fast unit tests only
@@ -32,6 +32,12 @@ test-slow:
 
 ## CI minimum: lint + clock audit + unit tests
 ci: lint check-clock test
+
+## Enable the opt-in pre-push hook (runs `make ci` before every push).
+## One-time per clone. Disable with: git config --unset core.hooksPath
+hooks:
+	git config core.hooksPath .githooks
+	@echo "pre-push hook enabled (runs 'make ci'). Skip a push with: git push --no-verify"
 
 ## Time-warp audit: forbid direct `dt_util.utcnow`/`datetime.now`/`time.monotonic`
 ## in the integration. Whitelist: custom_components/hemm/time.py (HAClock).
