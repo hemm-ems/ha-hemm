@@ -81,8 +81,14 @@ def _make_mock_result(status: str = "optimal", plans: list | None = None) -> Mag
 class TestAutoSolve:
     """Coordinator auto-solve: _async_update_data triggers solver."""
 
+    @pytest.mark.req("008:FR-004")
     async def test_update_data_runs_solver(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
-        """Two refresh cycles produce iteration_count == 2 (background tasks)."""
+        """A scheduled coordinator refresh triggers a solve with no external hemm.tick.
+
+        Exercises the DataUpdateCoordinator refresh entrypoint that the 15-min
+        update_interval drives; asserts each tick runs exactly one solve — proving
+        periodic re-planning needs no external automation (008:FR-004 / SC-004).
+        """
         coordinator: HemmCoordinator = hass.data[DOMAIN][init_with_devices.entry_id]
         call_count = 0
 
