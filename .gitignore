@@ -22,3 +22,6 @@ concept-hemm.md
 implementation-plan-hemm.md
 test-concept-hemm.md
 local-concept-roast.md
+
+# Secrets — never commit
+.env
