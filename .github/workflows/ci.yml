@@ -146,7 +146,7 @@ jobs:
       - name: Install hemm + companion inside container
         run: |
           docker exec hemm-ha-test pip install --quiet git+https://github.com/hemm-ems/hemm.git
-          docker exec hemm-ha-test pip install --quiet git+https://github.com/hemm-ems/hactl-companion.git
+          docker exec hemm-ha-test pip install --quiet git+https://github.com/hemm-ems/hactl-companion.git@v2026.7.2  # pinned; see AGENT.md + tests/integration/hactl.py COMPANION_PINNED_VERSION
 
       - name: Restart HA to load hemm
         run: |

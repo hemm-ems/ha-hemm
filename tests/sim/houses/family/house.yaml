@@ -31,7 +31,7 @@ devices:
     safe_default_script: script.hemm_battery_safe
 
   - type: ev_charger
-    tier: beginner
+    tier: pro
     config:
       device_name: "Garage Wallbox"
       max_charge_kw: 11.0
