@@ -12,8 +12,10 @@ default_config:
 # Safe-default and action scripts for all device types
 script: !include scripts.yaml
 
-# Automations are created dynamically via hactl auto create (registry-based).
-# No file-based automation: !include needed.
+# House quirk automations are created via `hactl auto create`, which writes
+# them through the companion into automations.yaml (the file must exist —
+# the sim conftest touches it before HA restarts).
+automation: !include automations.yaml
 
 # Mock entities for simulated sensor states.
 # These input_booleans and input_numbers allow quirk automations to trigger

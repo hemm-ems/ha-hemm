@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -19,8 +20,13 @@ _LOGGER = logging.getLogger(__name__)
 # Default timeout for hactl commands (seconds)
 DEFAULT_TIMEOUT = 30
 
-# GitHub release URL pattern
-HACTL_RELEASE_URL = "https://github.com/hemm-ems/hactl/releases/latest/download"
+# Pinned tool releases (see AGENT.md tool-pinning norm). Both tools sit on
+# the test contract and have silently changed semantics under "latest"
+# before (hactl: dry-run-by-default svc call; companion: token auth +
+# file-based automations). HACTL_PINNED_VERSION must match the Makefile
+# install-hactl pin; override with HACTL_VERSION env for bump testing.
+HACTL_PINNED_VERSION = "v2026.7.5"
+COMPANION_PINNED_VERSION = "v2026.7.2"
 
 
 @dataclass
@@ -80,12 +86,18 @@ class Hactl:
 
         _LOGGER.debug("Running: %s", " ".join(cmd))
 
+        # HACTL_MANUAL_MODE=off: hactl >= 0.4 refuses --confirm on the first
+        # command of a family per session (interactive-use guard). Tests are
+        # scripted; disable the guard so --confirm is honored deterministically.
+        env = {**os.environ, "HACTL_MANUAL_MODE": "off"}
+
         try:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=timeout or self._timeout,
+                env=env,
             )
         except subprocess.TimeoutExpired as e:
             raise HactlError(
@@ -268,7 +280,7 @@ class Hactl:
 
     def config_check(self) -> HactlOutput:
         """hactl config check — validate HA config."""
-        return self._run_or_raise(["svc", "call", "homeassistant.check_config"])
+        return self.svc_call("homeassistant.check_config")
 
     # --- Automations ---
 
@@ -321,11 +333,22 @@ class Hactl:
     # --- Services ---
 
     def svc_call(self, service: str, data: dict[str, Any] | None = None) -> HactlOutput:
-        """hactl svc call — call a service."""
+        """hactl svc call — call a service.
+
+        hactl >= 0.4 makes `svc call` a dry-run unless --confirm is passed,
+        and exits 0 either way. Always confirm, and fail loud if the call
+        still came back as a dry-run — a silent no-op here makes every
+        counter/audit assertion in the container tests vacuously pass.
+        """
         args = ["svc", "call", service]
         if data:
             args.extend(["-d", json.dumps(data)])
-        return self._run_or_raise(args)
+        args.append("--confirm")
+        output = self._run_or_raise(args)
+        combined = f"{output.stdout}\n{output.stderr}"
+        if "would call:" in combined or "--confirm refused" in combined:
+            raise HactlError([self._binary, *args], output)
+        return output
 
     # --- Templates ---
 
@@ -395,20 +418,13 @@ def get_hactl_download_url() -> str:
 
     The release assets use the pattern: hactl_{version}_{os}_{arch}.{ext}
     where ext is .zip on Windows and .tar.gz on Unix.
-    We use the GitHub API to resolve the latest version and find the right asset.
+    hactl is pinned (HACTL_VERSION env overrides): the test contract depends
+    on its CLI semantics, and "latest" has silently changed them before
+    (dry-run-by-default svc call). Bump deliberately, with a full
+    container+sim run.
     """
-    import urllib.request
-
-    # Resolve latest release tag
-    api_url = "https://api.github.com/repos/hemm-ems/hactl/releases/latest"
-    req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req) as resp:
-        import json as _json
-
-        data = _json.loads(resp.read())
-
-    tag = data["tag_name"]  # e.g. "v0.5.0"
-    version = tag.lstrip("v")  # "0.5.0"
+    tag = os.environ.get("HACTL_VERSION", HACTL_PINNED_VERSION)
+    version = tag.lstrip("v")
 
     if sys.platform == "win32":
         asset_name = f"hactl_{version}_windows_amd64.zip"

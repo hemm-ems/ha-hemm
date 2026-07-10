@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from .hactl import Hactl, get_hactl_binary_name, get_hactl_download_url
+from .hactl import COMPANION_PINNED_VERSION, Hactl, get_hactl_binary_name, get_hactl_download_url
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -171,7 +171,7 @@ def docker_compose_up(ha_version: str):
             "pip",
             "install",
             "--quiet",
-            "git+https://github.com/hemm-ems/hactl-companion.git",
+            f"git+https://github.com/hemm-ems/hactl-companion.git@{COMPANION_PINNED_VERSION}",
         ],
         capture_output=True,
         timeout=120,
@@ -402,7 +402,10 @@ def hactl_dir(ha_token: str, ha_base_url: str, tmp_path_factory: pytest.TempPath
     """
     dir_path = tmp_path_factory.mktemp("hactl_instance")
     env_file = dir_path / ".env"
-    env_file.write_text(f"HA_URL={ha_base_url}\nHA_TOKEN={ha_token}\nCOMPANION_URL=http://127.0.0.1:9100\n")
+    env_file.write_text(
+        f"HA_URL={ha_base_url}\nHA_TOKEN={ha_token}\n"
+        f"COMPANION_URL=http://127.0.0.1:9100\nCOMPANION_TOKEN={_COMPANION_TOKEN}\n"
+    )
     _LOGGER.info("Created hactl instance dir: %s", dir_path)
     return dir_path
 

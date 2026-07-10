@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.integration.hactl import Hactl, get_hactl_binary_name
+from tests.integration.hactl import COMPANION_PINNED_VERSION, Hactl, get_hactl_binary_name
 
 from .runner import (
     HOUSES_DIR,
@@ -100,6 +100,13 @@ def _start_house_container(house: HouseConfig) -> None:
 
     # Install hemm core + companion inside container
     container_name = f"hemm-sim-{house.name}"
+    # configuration.yaml includes automations.yaml; the fresh volume doesn't
+    # have it, and the companion's auto-create 404s on a missing file.
+    subprocess.run(
+        ["docker", "exec", container_name, "sh", "-c", "touch /config/automations.yaml"],
+        capture_output=True,
+        timeout=30,
+    )
     _LOGGER.info("Installing hemm + companion inside %s...", container_name)
     subprocess.run(
         ["docker", "exec", container_name, "pip", "install", "--quiet", "/hemm-src"],
@@ -115,7 +122,7 @@ def _start_house_container(house: HouseConfig) -> None:
             "pip",
             "install",
             "--quiet",
-            "git+https://github.com/hemm-ems/hactl-companion.git",
+            f"git+https://github.com/hemm-ems/hactl-companion.git@{COMPANION_PINNED_VERSION}",
         ],
         capture_output=True,
         timeout=300,
@@ -214,7 +221,9 @@ def sim_house(request: pytest.FixtureRequest, hactl_binary: Path, bin_dir: Path)
         hactl_dir = Path(tempfile.mkdtemp(prefix=f"hactl_sim_{house.name}_"))
         env_file = hactl_dir / ".env"
         companion_url = f"http://127.0.0.1:{house.companion_port}"
-        env_file.write_text(f"HA_URL={base_url}\nHA_TOKEN={token}\nCOMPANION_URL={companion_url}\n")
+        env_file.write_text(
+            f"HA_URL={base_url}\nHA_TOKEN={token}\nCOMPANION_URL={companion_url}\nCOMPANION_TOKEN={_COMPANION_TOKEN}\n"
+        )
         hactl = Hactl(binary=hactl_binary, instance_dir=hactl_dir, timeout=60)
 
         # Wait for hactl

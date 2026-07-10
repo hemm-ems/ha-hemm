@@ -33,6 +33,9 @@ _CLIENT_ID = "https://hemm.test/"
 _ONBOARD_NAME = "HEMM Sim Home"
 _ONBOARD_USER = "hemm_test"
 _ONBOARD_PASS = "hemm_test_pass_123"
+# Must match the SUPERVISOR_TOKEN the sim conftest starts the companion with —
+# companion write endpoints (auto/script/helper create) 401 without it.
+_COMPANION_TOKEN = "sim-test-token-12345"
 
 HOUSES_DIR = Path(__file__).parent / "houses"
 
@@ -418,7 +421,9 @@ def full_setup(house: HouseConfig, base_url: str, hactl_binary: Path, bin_dir: P
     hactl_dir = Path(tempfile.mkdtemp(prefix=f"hactl_sim_{house.name}_"))
     env_file = hactl_dir / ".env"
     companion_url = f"http://127.0.0.1:{house.companion_port}"
-    env_file.write_text(f"HA_URL={base_url}\nHA_TOKEN={token}\nCOMPANION_URL={companion_url}\n")
+    env_file.write_text(
+        f"HA_URL={base_url}\nHA_TOKEN={token}\nCOMPANION_URL={companion_url}\nCOMPANION_TOKEN={_COMPANION_TOKEN}\n"
+    )
     hactl = Hactl(binary=hactl_binary, instance_dir=hactl_dir, timeout=60)
 
     # Wait for hactl to connect

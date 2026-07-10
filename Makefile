@@ -116,21 +116,25 @@ docker-logs:
 docker-logs-companion:
 	docker logs hemm-companion-test --tail 20
 
-## Install hactl binary (downloads latest release from GitHub)
+## Install hactl binary (pinned release; see AGENT.md tool-pinning norm).
+## Must match HACTL_PINNED_VERSION in tests/integration/hactl.py.
+## Override for bump testing: make install-hactl HACTL_VERSION=v2026.7.6
+HACTL_VERSION ?= v2026.7.5
+
 install-hactl:
 ifeq ($(OS),Windows_NT)
 	@if not exist .bin mkdir .bin
-	@powershell -Command "$$ProgressPreference='SilentlyContinue'; $$tag=(Invoke-RestMethod 'https://api.github.com/repos/hemm-ems/hactl/releases/latest').tag_name; $$v=$$tag.TrimStart('v'); $$url=\"https://github.com/hemm-ems/hactl/releases/download/$$tag/hactl_$${v}_windows_amd64.zip\"; Invoke-WebRequest -Uri $$url -OutFile '.bin/hactl.zip'; Expand-Archive -Path '.bin/hactl.zip' -DestinationPath '.bin' -Force; Remove-Item '.bin/hactl.zip'"
-	@echo "hactl installed to .bin/hactl.exe"
+	@powershell -Command "$$ProgressPreference='SilentlyContinue'; $$tag='$(HACTL_VERSION)'; $$v=$$tag.TrimStart('v'); $$url=\"https://github.com/hemm-ems/hactl/releases/download/$$tag/hactl_$${v}_windows_amd64.zip\"; Invoke-WebRequest -Uri $$url -OutFile '.bin/hactl.zip'; Expand-Archive -Path '.bin/hactl.zip' -DestinationPath '.bin' -Force; Remove-Item '.bin/hactl.zip'"
+	@echo "hactl $(HACTL_VERSION) installed to .bin/hactl.exe"
 else
 	@mkdir -p .bin
-	@TAG=$$(curl -sL https://api.github.com/repos/hemm-ems/hactl/releases/latest | grep tag_name | head -1 | cut -d'"' -f4); \
+	@TAG=$(HACTL_VERSION); \
 	 VERSION=$${TAG#v}; \
 	 ARCH=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
 	 OS_NAME=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
 	 curl -sL "https://github.com/hemm-ems/hactl/releases/download/$${TAG}/hactl_$${VERSION}_$${OS_NAME}_$${ARCH}.tar.gz" | tar xz -C .bin/
 	@chmod +x .bin/hactl
-	@echo "hactl installed to .bin/hactl"
+	@echo "hactl $(HACTL_VERSION) installed to .bin/hactl"
 endif
 
 ## --- Sim House Management ---
@@ -162,6 +166,7 @@ else
 	@while [ "$$(docker inspect --format '{{.State.Health.Status}}' $(SIM_CONTAINER) 2>/dev/null)" != "healthy" ]; do sleep 2; done; echo "HA healthy"
 endif
 	@echo "Installing hemm package in $(SIM_CONTAINER)..."
+	docker exec $(SIM_CONTAINER) sh -c "touch /config/automations.yaml"
 	docker exec $(SIM_CONTAINER) pip install --quiet /hemm-src 2>&1 | tail -1
 	@echo "Restarting HA to load hemm..."
 	docker restart $(SIM_CONTAINER)
