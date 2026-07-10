@@ -15,7 +15,7 @@ hub:
 
 devices:
   - type: pv_forecast
-    tier: beginner
+    tier: advanced
     config:
       device_name: "Roof PV"
       peak_power_kwp: 9.8
