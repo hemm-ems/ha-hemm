@@ -323,7 +323,8 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         active_windows = self.constraint_manager.get_active(now)
         price_forecast = await self.hass.async_add_executor_job(self._get_price_forecast)
-        solver = self._get_solver()
+        # Solver construction imports pyomo (heavy); keep it off the event loop.
+        solver = await self.hass.async_add_import_executor_job(self._get_solver)
 
         result: SolverResult = await self.hass.async_add_executor_job(
             solver.solve,
