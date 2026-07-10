@@ -153,21 +153,27 @@ _sim_port_villa   = 8133
 _sim_port_para14a = 8134
 
 SIM_PORT = $(_sim_port_$(HOUSE))
+# Must mirror HouseConfig.companion_port (= ha_port + 1000) in tests/sim/runner.py,
+# else `make sim-setup` dials a port compose never mapped.
+SIM_COMPANION_PORT = $(shell echo $$(( $(SIM_PORT) + 1000 )))
 SIM_CONTAINER = hemm-sim-$(HOUSE)
+# Must match _COMPANION_TOKEN in tests/sim/runner.py and tests/sim/conftest.py.
+SIM_COMPANION_TOKEN = sim-test-token-12345
 
 ## Start a sim house container
 sim-up:
 	@echo "Starting sim house: $(HOUSE) (port $(SIM_PORT))..."
-	HOUSE_NAME=$(HOUSE) HOUSE_PORT=$(SIM_PORT) docker compose -f $(SIM_COMPOSE) up -d --wait
+	HOUSE_NAME=$(HOUSE) HOUSE_PORT=$(SIM_PORT) COMPANION_PORT=$(SIM_COMPANION_PORT) docker compose -f $(SIM_COMPOSE) up -d --wait
 	@echo "Waiting for HA to be healthy..."
 ifeq ($(OS),Windows_NT)
 	@powershell -Command "do { Start-Sleep -Milliseconds 2000; $$s = docker inspect --format '{{.State.Health.Status}}' $(SIM_CONTAINER) 2>$$null } while ($$s -ne 'healthy'); Write-Host 'HA healthy'"
 else
 	@while [ "$$(docker inspect --format '{{.State.Health.Status}}' $(SIM_CONTAINER) 2>/dev/null)" != "healthy" ]; do sleep 2; done; echo "HA healthy"
 endif
-	@echo "Installing hemm package in $(SIM_CONTAINER)..."
+	@echo "Installing hemm + companion in $(SIM_CONTAINER)..."
 	docker exec $(SIM_CONTAINER) sh -c "touch /config/automations.yaml"
 	docker exec $(SIM_CONTAINER) pip install --quiet /hemm-src 2>&1 | tail -1
+	docker exec $(SIM_CONTAINER) pip install --quiet "git+https://github.com/hemm-ems/hactl-companion.git@v2026.7.2" 2>&1 | tail -1
 	@echo "Restarting HA to load hemm..."
 	docker restart $(SIM_CONTAINER)
 ifeq ($(OS),Windows_NT)
@@ -175,7 +181,9 @@ ifeq ($(OS),Windows_NT)
 else
 	@while [ "$$(docker inspect --format '{{.State.Health.Status}}' $(SIM_CONTAINER) 2>/dev/null)" != "healthy" ]; do sleep 2; done; echo "HA ready with hemm"
 endif
-	@echo "Sim house $(HOUSE) ready at http://localhost:$(SIM_PORT)"
+	@echo "Starting companion..."
+	docker exec -d $(SIM_CONTAINER) sh -c "SUPERVISOR_TOKEN=$(SIM_COMPANION_TOKEN) python3 -m companion"
+	@echo "Sim house $(HOUSE) ready at http://localhost:$(SIM_PORT) (companion :$(SIM_COMPANION_PORT))"
 
 ## Setup a sim house (onboard + provision devices) — container must be running
 sim-setup: install-hactl
@@ -186,7 +194,7 @@ sim-setup: install-hactl
 ## Stop and remove a sim house container
 sim-down:
 	@echo "Stopping sim house: $(HOUSE)..."
-	HOUSE_NAME=$(HOUSE) HOUSE_PORT=$(SIM_PORT) docker compose -f $(SIM_COMPOSE) down -v --remove-orphans
+	HOUSE_NAME=$(HOUSE) HOUSE_PORT=$(SIM_PORT) COMPANION_PORT=$(SIM_COMPANION_PORT) docker compose -f $(SIM_COMPOSE) down -v --remove-orphans
 ifeq ($(OS),Windows_NT)
 	@if exist .bin\.ha_sim_token_$(HOUSE) del .bin\.ha_sim_token_$(HOUSE)
 else

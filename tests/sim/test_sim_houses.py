@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import pytest
+from homeassistant.util import slugify
 
 from tests.integration.hactl import Hactl
 
@@ -104,14 +105,16 @@ class TestSimHouse:
             pytest.skip(f"No automations defined for house {house.name}")
         result = hactl.auto_ls()
         assert result.success
-        # Verify each expected automation ID appears in the listing
+        # Verify each expected automation appears in the listing. hactl's
+        # `auto ls` id column is the entity object_id, which HA derives by
+        # slugifying the alias — NOT the automations.yaml `id` field.
         auto_data = result.json_data
         if isinstance(auto_data, list):
             auto_ids = {a.get("id", a.get("automation_id", "")) for a in auto_data}
         else:
             auto_ids = set()
         for auto in house.automations:
-            expected_id = auto.get("id", "")
+            expected_id = slugify(auto["alias"]) if auto.get("alias") else auto.get("id", "")
             assert expected_id in auto_ids, (
                 f"Automation '{expected_id}' not found in HA for house {house.name}. Found: {auto_ids}"
             )

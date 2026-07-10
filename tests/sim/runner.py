@@ -335,6 +335,11 @@ def _install_automations(hactl: Hactl, house: HouseConfig) -> None:
         finally:
             tmp_path.unlink(missing_ok=True)
 
+    # The companion (>= v2026.7.x) writes automations to automations.yaml but
+    # no longer reloads HA, so the entities never appear without this.
+    hactl.svc_call("automation.reload")
+    _LOGGER.info("Automations reloaded (%d installed)", len(house.automations))
+
 
 def setup_house(house: HouseConfig, hactl: Hactl) -> None:
     """Provision a complete house: hub + all devices + automations.
