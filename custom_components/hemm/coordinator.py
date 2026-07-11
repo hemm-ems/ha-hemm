@@ -57,6 +57,12 @@ except (ImportError, ModuleNotFoundError):
 
 _LOGGER = logging.getLogger(__name__)
 
+# Process-wide solve lock: concurrent pyomo/HiGHS solves in separate executor
+# threads deadlock in native code. A config-entry reload briefly leaves the old
+# coordinator's background solve running alongside the new instance, so the
+# lock must be shared across coordinator instances, not per-instance.
+_SOLVE_LOCK = asyncio.Lock()
+
 UPDATE_INTERVAL = timedelta(minutes=15)
 SOLVER_TIMEOUT_SECONDS = UPDATE_INTERVAL.total_seconds() - 30
 MAX_HISTORY = 20
@@ -130,7 +136,7 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Manual price override (set via hemm.set_price_curve service)
         self._manual_prices: list[float] | None = None
         self._manual_price_resolution: int = 15
-        self._currently_solving: bool = False
+        self._solve_lock = _SOLVE_LOCK
 
     @property
     def horizon_hours(self) -> int:
@@ -281,17 +287,14 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Returns:
             The solver result.
         """
-        from hemm_core.solvers.protocol import SolverResult, SolverStatus
-
-        if self._currently_solving:
-            _LOGGER.debug("Solver already running, skipping")
-            return self._last_result or SolverResult(status=SolverStatus.OPTIMAL)
-
-        self._currently_solving = True
-        try:
+        # Serialize solves instead of skipping: an explicit hemm.replan must
+        # yield a fresh solve even when a background solve is in flight (the
+        # old skip-and-return-cached path made replan a silent no-op, exposed
+        # once the pyomo import stopped blocking the event loop).
+        if self._solve_lock.locked():
+            _LOGGER.debug("Solver already running, waiting for it to finish")
+        async with self._solve_lock:
             return await self._do_solve(dry_run=dry_run, device_filter=device_filter)
-        finally:
-            self._currently_solving = False
 
     async def _do_solve(self, *, dry_run: bool = False, device_filter: list[str] | None = None) -> Any:
         """Internal solver execution (no re-entrancy guard)."""
@@ -323,7 +326,8 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         active_windows = self.constraint_manager.get_active(now)
         price_forecast = await self.hass.async_add_executor_job(self._get_price_forecast)
-        solver = self._get_solver()
+        # Solver construction imports pyomo (heavy); keep it off the event loop.
+        solver = await self.hass.async_add_import_executor_job(self._get_solver)
 
         result: SolverResult = await self.hass.async_add_executor_job(
             solver.solve,
@@ -506,12 +510,13 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Called by DataUpdateCoordinator on the 15-min schedule and on
         async_request_refresh().  The solver runs asynchronously so that
         async_config_entry_first_refresh() does not block setup.  Overlapping
-        solver runs are prevented by the _currently_solving re-entrancy guard.
+        solver runs are serialized by the _solve_lock (the periodic tick skips
+        scheduling when a solve is already in flight; explicit service calls wait).
         """
         devices: list[dict[str, Any]] = self.config_entry.data.get("devices", [])
 
         # Schedule solver as a non-blocking background task
-        if devices and _HEMM_CORE_AVAILABLE and not self._currently_solving:
+        if devices and _HEMM_CORE_AVAILABLE and not self._solve_lock.locked():
             self.hass.async_create_task(self._run_solver_background())
 
         return self._build_data()

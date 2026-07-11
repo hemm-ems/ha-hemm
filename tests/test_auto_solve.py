@@ -108,7 +108,8 @@ class TestAutoSolve:
         assert call_count == first + 1, "Each refresh should trigger one solve"
 
     async def test_reentrancy_guard(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
-        """Overlapping solve calls are skipped via _currently_solving guard."""
+        """Overlapping solve calls serialize on _solve_lock: never concurrent,
+        but an explicit request still gets its own fresh solve afterwards."""
         coordinator: HemmCoordinator = hass.data[DOMAIN][init_with_devices.entry_id]
         solve_count = 0
         gate = asyncio.Event()
@@ -124,17 +125,20 @@ class TestAutoSolve:
         # Start first solve (will block on gate)
         task1 = asyncio.create_task(coordinator.async_run_solver())
 
-        # Give it a moment to set _currently_solving
+        # Give it a moment to acquire the lock
         await asyncio.sleep(0.01)
-        assert coordinator._currently_solving
+        assert coordinator._solve_lock.locked()
 
-        # Second call should be skipped
-        await coordinator.async_run_solver()
-        assert solve_count == 1, "Second call should have been skipped"
+        # Second call must wait, not run concurrently — and not be dropped
+        task2 = asyncio.create_task(coordinator.async_run_solver())
+        await asyncio.sleep(0.01)
+        assert solve_count == 1, "Second solve must not start while first is in flight"
 
-        # Unblock first solve
+        # Unblock: both solves complete, the second with its own fresh run
         gate.set()
         await task1
+        await task2
+        assert solve_count == 2, "Explicit solve request must run after the in-flight solve"
 
     async def test_solver_timeout(self, hass: HomeAssistant, init_with_devices: ConfigEntry) -> None:
         """A runaway solver is cancelled by the timeout in _run_solver_background."""
