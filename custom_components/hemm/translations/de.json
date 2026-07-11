@@ -39,7 +39,9 @@
           "horizon_hours": "Planungshorizont (Stunden)",
           "max_iterations": "Maximale Solver-Iterationen",
           "price_adapter": "Preisquelle",
-          "solver_backend": "Solver-Backend"
+          "solver_backend": "Solver-Backend",
+          "actuation_enabled": "Live-Aktuierung aktivieren",
+          "watchdog_timeout_seconds": "Watchdog-Timeout (Sekunden)"
         }
       },
       "select_device": {
@@ -55,7 +57,11 @@
         "description": "Geräteparameter festlegen. Ein sicheres Fallback-Script ist erforderlich.",
         "data": {
           "device_name": "Gerätename",
+          "control_class": "Steuerungsklasse",
           "safe_default_script": "Sicheres Fallback-Script"
+        },
+        "data_description": {
+          "control_class": "Wie HEMM dieses Gerät behandelt: passive (nur beobachten), reactive (Sollwert + Hüllkurve), planned (vollständige Optimierung)."
         }
       }
     },
@@ -68,9 +74,195 @@
       "title": "Solver-Leistung eingeschränkt",
       "description": "Der HEMM-Solver konnte nicht innerhalb der erwarteten Zeit konvergieren. Dies kann auf ein Konfigurationsproblem oder eine zu hohe Geräteanzahl hinweisen."
     },
+    "actuation_verify_failed": {
+      "title": "HEMM-Aktuierungsverifikation fehlgeschlagen",
+      "description": "HEMM konnte eine Aktuierung für Gerät {device_id} nicht verifizieren. Das sichere Fallback des Geräts wurde ausgelöst. Überprüfen Sie das Benutzer-Script und die Verifikations-Entität."
+    },
+    "actuation_self_confirming": {
+      "title": "HEMM-Aktuierungsverifikation ist selbstbestätigend",
+      "description": "Gerät {device_id} besitzt eine Aktion, deren Verifikations-Entität mit der Entität übereinstimmt, in die sie schreibt. HEMM hat diese Aktion verweigert. Verwenden Sie eine unabhängige Verifikations-Entität."
+    },
     "online_id_update": {
       "title": "Modell-Update verfügbar für {device_name}",
       "description": "Die Online-Identifikation schlägt aktualisierte Parameter für {device_name} vor. Überprüfen und bestätigen zum Anwenden."
+    }
+  },
+  "services": {
+    "replan": {
+      "name": "Neuplanung",
+      "description": "Löst sofort einen Optimierungslauf aus.",
+      "fields": {
+        "dry_run": {
+          "name": "Testlauf",
+          "description": "Führt den Optimierer aus, ohne die Ergebnisse anzuwenden."
+        },
+        "device_filter": {
+          "name": "Geräte-Filter",
+          "description": "Optionale Liste von Geräte-IDs, die neu optimiert werden sollen. Andere behalten ihren aktuellen Plan."
+        }
+      }
+    },
+    "simulate": {
+      "name": "Simulieren",
+      "description": "Führt eine Simulation aus (immer ein Testlauf).",
+      "fields": {
+        "dry_run": {
+          "name": "Testlauf",
+          "description": "Bei Simulate immer wahr."
+        },
+        "horizon_hours": {
+          "name": "Planungshorizont (Stunden)",
+          "description": "Überschreibt den Planungshorizont für diese Simulation."
+        }
+      }
+    },
+    "set_price_curve": {
+      "name": "Preiskurve setzen",
+      "description": "Strompreise für die nächste Optimierung manuell festlegen.",
+      "fields": {
+        "prices": {
+          "name": "Preise",
+          "description": "Liste der Preise in EUR/kWh pro Zeitschlitz."
+        },
+        "resolution_minutes": {
+          "name": "Auflösung",
+          "description": "Zeitschlitz-Auflösung in Minuten (Standard 15)."
+        },
+        "dry_run": {
+          "name": "Testlauf",
+          "description": "Preise setzen, ohne sie anzuwenden."
+        }
+      }
+    },
+    "set_solver": {
+      "name": "Solver setzen",
+      "description": "Wechselt das aktive Solver-Backend zur Laufzeit.",
+      "fields": {
+        "backend": {
+          "name": "Backend",
+          "description": "Solver-Backend: milp_central oder distributed."
+        },
+        "dry_run": {
+          "name": "Testlauf",
+          "description": "Wechseln, ohne anzuwenden."
+        }
+      }
+    },
+    "add_constraint_window": {
+      "name": "Constraint-Fenster hinzufügen",
+      "description": "Registriert eine zeitgebundene Randbedingung für ein Gerät.",
+      "fields": {
+        "window_id": {
+          "name": "Fenster-ID",
+          "description": "Eindeutige Kennung für dieses Constraint-Fenster."
+        },
+        "device_id": {
+          "name": "Geräte-ID",
+          "description": "Zielgerät für die Randbedingung."
+        },
+        "deadline": {
+          "name": "Frist",
+          "description": "Bis wann die Randbedingung erfüllt sein muss."
+        },
+        "requirement_type": {
+          "name": "Anforderungstyp",
+          "description": "Art der Randbedingung (z. B. min_soc_until, reach_min_temp_once)."
+        },
+        "requirement_value": {
+          "name": "Anforderungswert",
+          "description": "Numerischer Wert für die Randbedingung."
+        },
+        "flex_cost_per_hour_early": {
+          "name": "Flex-Kosten",
+          "description": "EUR-Strafe pro Stunde, die vor der Frist vorgezogen wird."
+        },
+        "priority_penalty": {
+          "name": "Priorität",
+          "description": "Prioritätsgewicht — höhere Werte gewinnen bei Konflikten."
+        },
+        "ttl_seconds": {
+          "name": "TTL",
+          "description": "Time-to-live in Sekunden."
+        },
+        "dry_run": {
+          "name": "Testlauf",
+          "description": "Hinzufügen, ohne anzuwenden."
+        }
+      }
+    },
+    "remove_constraint": {
+      "name": "Constraint entfernen",
+      "description": "Entfernt ein Constraint-Fenster anhand der ID.",
+      "fields": {
+        "window_id": {
+          "name": "Fenster-ID",
+          "description": "ID des zu entfernenden Constraint-Fensters."
+        },
+        "dry_run": {
+          "name": "Testlauf",
+          "description": "Entfernen, ohne anzuwenden."
+        }
+      }
+    },
+    "bump_priority": {
+      "name": "Priorität anheben",
+      "description": "Aktualisiert die Prioritätsstrafe eines Constraint-Fensters.",
+      "fields": {
+        "window_id": {
+          "name": "Fenster-ID",
+          "description": "ID des Constraint-Fensters."
+        },
+        "new_penalty": {
+          "name": "Neue Strafe",
+          "description": "Neuer Prioritätsstrafenwert."
+        },
+        "dry_run": {
+          "name": "Testlauf",
+          "description": "Aktualisieren, ohne anzuwenden."
+        }
+      }
+    },
+    "tick": {
+      "name": "Tick",
+      "description": "Löst manuell einen Optimierungszyklus aus.",
+      "fields": {
+        "dry_run": {
+          "name": "Testlauf",
+          "description": "Ausführen, ohne Ergebnisse anzuwenden."
+        }
+      }
+    },
+    "force_watchdog": {
+      "name": "Watchdog erzwingen",
+      "description": "Test-/Debug-Dienst, der eine Watchdog-Prüfung ausführt.",
+      "fields": {
+        "simulate_stale_for_seconds": {
+          "name": "Veraltet simulieren (Sekunden)",
+          "description": "Datiert die letzte erfolgreiche Lösung um diese Anzahl Sekunden zurück, bevor der Watchdog geprüft wird."
+        }
+      }
+    },
+    "actuate_now": {
+      "name": "Jetzt aktuieren",
+      "description": "Test-/Debug-Dienst, der eine benannte Manifest-Aktion für ein Gerät auslöst.",
+      "fields": {
+        "device_id": {
+          "name": "Geräte-ID",
+          "description": "HEMM-Gerätekennung, die aktuiert werden soll."
+        },
+        "action_name": {
+          "name": "Aktionsname",
+          "description": "Benannte Manifest-Aktion, die ausgelöst wird."
+        },
+        "dry_run": {
+          "name": "Testlauf",
+          "description": "Auswerten, ohne das Script aufzurufen."
+        },
+        "pre_call_check": {
+          "name": "Vorab-Prüfung",
+          "description": "Führt vor der Aktuierung HEMMs Sicherheitsprüfung aus."
+        }
+      }
     }
   }
 }
