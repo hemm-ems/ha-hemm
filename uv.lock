@@ -2237,7 +2237,7 @@ wheels = [
 
 [[package]]
 name = "ha-hemm"
-version = "2026.5.2"
+version = "2026.7.1"
 source = { editable = "." }
 
 [package.optional-dependencies]

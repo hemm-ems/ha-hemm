@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -181,6 +182,24 @@ class TestPhase7ActuationContainer:
             action_script="script.hemm_phase7_active_pass",
             verify_entity="input_boolean.hemm_phase7_verify_pass",
         )
+        # Since core 2026.7.1 (honest round-trip losses + feed-in settlement) an
+        # unconstrained battery on a flat price correctly plans 0 kW, so a bare
+        # replan actuates nothing. Force demand: 50%→80% of 10 kWh within 3
+        # slots at 5 kW max means even the first slot must charge (pigeonhole).
+        deadline = (datetime.now(UTC) + timedelta(minutes=45)).isoformat()
+        window_id = "sc001_forced_charge"
+        result = hactl.svc_call(
+            "hemm.add_constraint_window",
+            {
+                "window_id": window_id,
+                "device_id": device_id,
+                "deadline": deadline,
+                "requirement_type": "min_soc_until",
+                "requirement_params": {"min_soc_pct": 80},
+                "priority_penalty": 50.0,
+            },
+        )
+        assert result.success
         active_before = _counter(hactl, "input_number.hemm_phase7_active_calls")
 
         result = hactl.svc_call("hemm.replan", {"device_filter": [device_id]})
@@ -189,6 +208,7 @@ class TestPhase7ActuationContainer:
         active_after = _counter(hactl, "input_number.hemm_phase7_active_calls")
         assert active_after - active_before >= 1
         assert _latest_audit_outcome(hactl) == "verified"
+        hactl.svc_call("hemm.remove_constraint", {"window_id": window_id})
 
     @pytest.mark.req("010:FR-001")
     def test_sc002_verify_failure_retries_safe_default_and_repair(self, hactl: Hactl) -> None:

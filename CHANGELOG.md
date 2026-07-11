@@ -4,14 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2026.7.1] - 2026-07-11
+
 ### Added
 
-- **`pool_pump` device type** — a controllable electrical load registered in the config flow and manifest builder; proves the core's primitive component model end-to-end (a new device plans through a real HA replan with zero solver code).
+- **`pool_pump` device type** — a controllable electrical load registered in the config flow and manifest builder; proves the core's primitive component model end-to-end (a new device plans through a real HA replan with zero solver code). Now also registered in the identification stub registry.
 - **Primitive metadata in the manifest schema** surfaced to the integration (`x-hemm-primitives`), with an integration test asserting existing manifests validate unchanged.
 
 ### Changed
 
+- **Core pinned to `hemm==2026.7.1`** — brings the primitive component model (spec 003), storage round-trip losses, PV generation in the energy balance (FR-006), grid-settlement fix (FR-002), and scenario-trust features (FR-011/012/013).
+- Solver construction and the pyomo import moved off the event loop; solves are serialized on a process-wide lock. An explicit `hemm.replan` now waits for an in-flight solve and then runs fresh instead of silently returning the cached result. This also fixes a native deadlock when a config-entry reload left two coordinators solving concurrently.
 - Updated `docs/solver-decision.md`: after the core's primitive-component refactor (spec 003), the distributed backend now clears the A/B gate (~1.2% average cost gap, 6/6 scenarios converge, was ~96% / 1-of-6). Central MILP remains the default; the historical 2026-05-11 record is preserved.
+
+### Fixed
+
+- Example automations now call `hemm.add_constraint_window` with the schema-correct `device_id` (4 of 8 examples previously used an unsupported `device_filter` key and failed validation when pasted verbatim).
+- Repair fix-flows dispatch on the issue type: `actuation_verify_failed` and `actuation_self_confirming` issues no longer open the generic "solver degraded" flow.
+- `translations/en.json` and `de.json` synced to full key parity with `strings.json` (`control_class`, actuation issues, services block).
+- `make build` derives the version from `manifest.json` and produces the HACS-conform `hemm-ha-<version>.zip`.
 
 ## [2026.5.2] - 2026-05-29
 
