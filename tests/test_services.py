@@ -917,11 +917,39 @@ class TestRepairs:
         flow = HemmSolverDegradedRepairFlow()
         assert flow is not None
 
-    async def test_async_create_fix_flow(self) -> None:
-        from custom_components.hemm.repairs import async_create_fix_flow
+    async def test_async_create_fix_flow_solver_degraded(self) -> None:
+        from custom_components.hemm.repairs import HemmSolverDegradedRepairFlow, async_create_fix_flow
 
         flow = await async_create_fix_flow(None, "solver_degraded", None)
-        assert flow is not None
+        assert isinstance(flow, HemmSolverDegradedRepairFlow)
+
+    async def test_async_create_fix_flow_verify_failed(self) -> None:
+        """actuation_verify_failed issue_ids carry a device_id suffix."""
+        from custom_components.hemm.repairs import HemmActuationRepairFlow, async_create_fix_flow
+
+        flow = await async_create_fix_flow(None, "actuation_verify_failed_dev123", None)
+        assert isinstance(flow, HemmActuationRepairFlow)
+
+    async def test_async_create_fix_flow_self_confirming(self) -> None:
+        """actuation_self_confirming issue_ids carry a device_id suffix."""
+        from custom_components.hemm.repairs import HemmActuationRepairFlow, async_create_fix_flow
+
+        flow = await async_create_fix_flow(None, "actuation_self_confirming_dev456", None)
+        assert isinstance(flow, HemmActuationRepairFlow)
+
+    async def test_async_create_fix_flow_unknown_issue_falls_back(self) -> None:
+        """An unrecognized issue_id must not silently get the solver flow."""
+        from custom_components.hemm.repairs import (
+            ConfirmRepairFlow,
+            HemmActuationRepairFlow,
+            HemmSolverDegradedRepairFlow,
+            async_create_fix_flow,
+        )
+
+        flow = await async_create_fix_flow(None, "some_future_issue_type", None)
+        assert isinstance(flow, ConfirmRepairFlow)
+        assert not isinstance(flow, HemmSolverDegradedRepairFlow)
+        assert not isinstance(flow, HemmActuationRepairFlow)
 
 
 # ──────────────────────── Identification ────────────────────────

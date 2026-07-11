@@ -138,6 +138,18 @@ class PassiveLoadIdentifier(DeviceIdentifier):
         return None
 
 
+class PoolPumpIdentifier(DeviceIdentifier):
+    """Online ID for PoolPump — refines power draw/runtime model."""
+
+    @property
+    def device_type(self) -> str:
+        return "pool_pump"
+
+    def identify(self, observations: list[dict[str, Any]]) -> IdentificationResult | None:
+        """Stub: would refine max_power_kw from observed runtime/power draw."""
+        return None
+
+
 # Registry of identifiers per device type
 IDENTIFIER_REGISTRY: dict[str, type[DeviceIdentifier]] = {
     "room": RoomIdentifier,
@@ -148,6 +160,7 @@ IDENTIFIER_REGISTRY: dict[str, type[DeviceIdentifier]] = {
     "pv_forecast": PVForecastIdentifier,
     "ev_charger": EVChargerIdentifier,
     "passive_load": PassiveLoadIdentifier,
+    "pool_pump": PoolPumpIdentifier,
 }
 
 
