@@ -5,7 +5,7 @@
 # add forbidden_window constraints on both the heat pump and the EV
 # charger simultaneously.  When the signal clears, remove them.
 #
-# Adapt entity IDs, device_filter values, and priority (usually high)
+# Adapt entity IDs, device_id values, and priority (usually high)
 # to your setup.
 
 - id: hemm_14a_reduction_start
@@ -18,7 +18,7 @@
     - service: hemm.add_constraint_window
       data:
         window_id: "14a_hp_lockout"
-        device_filter: "Main Heat Pump"
+        device_id: heat_pump_main  # <-- placeholder: your HEMM device_id (see docs/onboarding.md)
         deadline: "{{ (now() + timedelta(hours=2)) | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
         requirement_type: "forbidden_window"
         priority_penalty: 50.0
@@ -26,7 +26,7 @@
     - service: hemm.add_constraint_window
       data:
         window_id: "14a_ev_lockout"
-        device_filter: "Garage Wallbox"
+        device_id: ev_charger_garage  # <-- placeholder: your HEMM device_id (see docs/onboarding.md)
         deadline: "{{ (now() + timedelta(hours=2)) | as_timestamp | timestamp_custom('%Y-%m-%dT%H:%M:%S+00:00') }}"
         requirement_type: "forbidden_window"
         priority_penalty: 50.0
