@@ -303,7 +303,10 @@ else
 endif
 
 ## Build (HACS compatible zip)
+## Filename follows hacs.json's "hemm-ha-{{ version }}.zip" pattern, using
+## manifest.json's version (the version release.yml tags and publishes).
 build:
 	@echo "Build step: package custom_components/hemm for HACS"
 	@mkdir -p dist
-	@cd custom_components && zip -r ../dist/hemm.zip hemm/
+	@VERSION=$$(python3 -c "import json; print(json.load(open('custom_components/hemm/manifest.json'))['version'])") && \
+		cd custom_components && zip -r ../dist/hemm-ha-$$VERSION.zip hemm/
