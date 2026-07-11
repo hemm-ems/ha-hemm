@@ -76,8 +76,8 @@ Each file is a standard HA automation (id, alias, trigger, action) that you can 
 
 ### Manual
 
-1. Download the [latest release](https://github.com/hemm-ems/ha-hemm/releases/latest) and unzip it.
-2. Copy the `custom_components/hemm/` directory into your HA configuration directory at `config/custom_components/hemm/`. You can do this via the [File Editor add-on](https://www.home-assistant.io/integrations/file_editor/), a Samba share, or SFTP — no SSH required.
+1. Download `hemm-ha.zip` from the [latest release](https://github.com/hemm-ems/ha-hemm/releases/latest). Its files (`manifest.json`, `__init__.py`, …) sit at the archive root.
+2. Create `config/custom_components/hemm/` in your HA configuration directory and extract the zip's contents into it (so you have `config/custom_components/hemm/manifest.json`). You can do this via the [File Editor add-on](https://www.home-assistant.io/integrations/file_editor/), a Samba share, or SFTP — no SSH required.
 3. Restart Home Assistant. HA automatically installs the `hemm` Python library on first load (it is declared in the integration's `manifest.json` requirements).
 4. Add the integration via Settings → Integrations → Add → HEMM.
 

@@ -4,7 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [2026.7.1] - 2026-07-11
+## [2026.7.2] - 2026-07-11
+
+### Fixed
+
+- **HACS install ("could not download").** The release packaging was never HACS-installable:
+  - `hacs.json` used `filename: "hemm-ha-{{ version }}.zip"`, but current HACS does not template the `filename` field — it matches the release asset name literally, so it requested a nonexistent `hemm-ha-{{ version }}.zip` and reported "could not download". The filename is now the static `hemm-ha.zip`.
+  - The release zip wrapped the integration in a `hemm/` folder, but HACS extracts the zip's contents into `config/custom_components/<domain>/`, which would have nested it to `custom_components/hemm/hemm/`. The zip is now built from inside `custom_components/hemm/` so its files sit at the zip root. `release.yml` and `make build` are aligned.
 
 ### Added
 

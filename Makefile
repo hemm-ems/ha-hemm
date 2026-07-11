@@ -303,10 +303,10 @@ else
 endif
 
 ## Build (HACS compatible zip)
-## Filename follows hacs.json's "hemm-ha-{{ version }}.zip" pattern, using
-## manifest.json's version (the version release.yml tags and publishes).
+## Static asset name "hemm-ha.zip" matching hacs.json's "filename" (current HACS
+## does not template that field). Files are zipped from INSIDE custom_components/hemm
+## so they land at the zip root — HACS extracts contents into custom_components/<domain>/.
 build:
 	@echo "Build step: package custom_components/hemm for HACS"
 	@mkdir -p dist
-	@VERSION=$$(python3 -c "import json; print(json.load(open('custom_components/hemm/manifest.json'))['version'])") && \
-		cd custom_components && zip -r ../dist/hemm-ha-$$VERSION.zip hemm/
+	@cd custom_components/hemm && zip -r ../../dist/hemm-ha.zip . -x '*__pycache__*' '*.pyc'

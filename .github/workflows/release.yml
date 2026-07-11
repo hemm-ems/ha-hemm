@@ -18,9 +18,14 @@ jobs:
           fetch-depth: 0
 
       - name: Build HACS zip
+        # HACS extracts the zip's contents into config/custom_components/<domain>/,
+        # so the integration files must sit at the zip ROOT (not nested in hemm/).
+        # The asset name must be STATIC — current HACS does not template the
+        # hacs.json "filename" field; it is matched literally against the release
+        # asset under the tag's download path.
         run: |
-          cd custom_components
-          zip -r ../hemm-ha-${{ github.ref_name }}.zip hemm/
+          cd custom_components/hemm
+          zip -r ../../hemm-ha.zip . -x '*__pycache__*' '*.pyc'
 
       - name: Extract changelog for this version
         id: changelog
@@ -37,6 +42,6 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --notes-file release-notes.md \
-            hemm-ha-${{ github.ref_name }}.zip
+            hemm-ha.zip
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
