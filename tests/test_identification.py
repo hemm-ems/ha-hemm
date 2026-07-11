@@ -9,6 +9,7 @@ from custom_components.hemm.identification import (
     BatteryIdentifier,
     EVChargerIdentifier,
     HeatPumpIdentifier,
+    PoolPumpIdentifier,
     PVForecastIdentifier,
     RoomIdentifier,
     ThermostatLoadIdentifier,
@@ -20,7 +21,7 @@ from custom_components.hemm.identification import (
 @pytest.mark.unit
 @pytest.mark.req("006:FR-002")
 def test_all_device_types_have_identifier() -> None:
-    """Test that all 7 device types have an identifier registered."""
+    """Test that all 9 device types have an identifier registered."""
     expected_types = {
         "room",
         "thermostat_load",
@@ -30,6 +31,7 @@ def test_all_device_types_have_identifier() -> None:
         "pv_forecast",
         "ev_charger",
         "passive_load",
+        "pool_pump",
     }
     assert set(IDENTIFIER_REGISTRY.keys()) == expected_types
 
@@ -44,6 +46,7 @@ def test_get_identifier_returns_correct_type() -> None:
     assert isinstance(get_identifier("pv_forecast"), PVForecastIdentifier)
     assert isinstance(get_identifier("ev_charger"), EVChargerIdentifier)
     assert isinstance(get_identifier("thermostat_load"), ThermostatLoadIdentifier)
+    assert isinstance(get_identifier("pool_pump"), PoolPumpIdentifier)
 
 
 @pytest.mark.unit
