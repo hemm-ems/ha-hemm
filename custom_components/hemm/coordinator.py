@@ -231,6 +231,26 @@ def _resample_to_slots(
     return values
 
 
+def _slice_forecast_from_now(forecast: list[tuple[datetime, float]], now: datetime) -> list[tuple[datetime, float]]:
+    """Drop already-elapsed slots so ``forecast[0]`` is the slot containing ``now``.
+
+    The MILP aligns prices to slots positionally (slot ``i`` is ``forecast[i]``) and
+    stamps the plan from ``forecast[0][0]``. A live tariff series begins at 00:00
+    today, so passing it raw anchors the solve at midnight — it plans the elapsed part
+    of the day and applies the measured start-of-horizon state (SoC, temperature) at
+    00:00 instead of the current slot. Keep the last point at or before ``now`` (the
+    current slot) and everything after it. A no-op when the series already starts at
+    ``now`` (e.g. a manual price curve). Assumes ``forecast`` is sorted ascending.
+    """
+    start = 0
+    for i, (timestamp, _value) in enumerate(forecast):
+        if timestamp <= now:
+            start = i
+        else:
+            break
+    return forecast[start:]
+
+
 def _create_constraint_manager(clock: Clock) -> ConstraintWindowManager:
     """Create a ConstraintWindowManager (deferred import)."""
     import hemm_core.constraints
@@ -615,6 +635,11 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # economics (feed-in tariff, outdoor temperature) on the solver itself.
         resolution_minutes = 15
         n_slots = self._horizon_hours * (60 // resolution_minutes)
+        # Anchor the horizon at the current slot before it reaches the solver: a live
+        # tariff series starts at 00:00 today and the MILP aligns prices/plan
+        # positionally, so the raw series would anchor the solve at midnight (planning
+        # the elapsed day and applying the measured SoC/temperature at 00:00).
+        price_forecast = _slice_forecast_from_now(price_forecast, now)
         t0 = _to_dt(price_forecast[0][0]) or now
         generation_forecast = self._build_generation_forecast(devices, n_slots, resolution_minutes, t0) or None
         initial_state = self._build_initial_state(devices) or None
