@@ -72,6 +72,7 @@ from .const import (
     CONF_SOURCE_TYPE,
     CONF_SOUTH_FACING,
     CONF_STANDBY_LOSS_W,
+    CONF_TEMP_ENTITY,
     CONF_THERMAL_MASS,
     CONF_TIER,
     CONF_TILT_DEG,
@@ -96,7 +97,7 @@ def _number(min_val: float, max_val: float, step: float = 0.1) -> NumberSelector
     return NumberSelector(NumberSelectorConfig(min=min_val, max=max_val, step=step, mode=NumberSelectorMode.BOX))
 
 
-def _entity(domain: str | None = None) -> EntitySelector:
+def _entity(domain: str | list[str] | None = None) -> EntitySelector:
     if domain:
         return EntitySelector(EntitySelectorConfig(domain=domain))
     return EntitySelector(EntitySelectorConfig())
@@ -137,6 +138,7 @@ def _build_room_schema(tier: str) -> vol.Schema:
         ),
     }
     if tier in (ConfigTier.ADVANCED, ConfigTier.PRO):
+        fields[vol.Optional(CONF_TEMP_ENTITY)] = _entity("sensor")
         fields[vol.Optional(CONF_THERMAL_MASS)] = _number(0.1, 100, 0.1)
         fields[vol.Optional(CONF_U_VALUE)] = _number(0.1, 10, 0.1)
         fields[vol.Optional(CONF_WINDOW_AREA_M2)] = _number(0, 100, 0.5)
@@ -188,6 +190,7 @@ def _build_water_heater_schema(tier: str) -> vol.Schema:
         vol.Required(CONF_MAX_POWER_KW): _number(0.5, 20, 0.1),
     }
     if tier in (ConfigTier.ADVANCED, ConfigTier.PRO):
+        fields[vol.Optional(CONF_TEMP_ENTITY)] = _entity("sensor")
         fields[vol.Optional(CONF_STANDBY_LOSS_W, default=50)] = _number(0, 500, 5)
         fields[vol.Optional(CONF_INSULATION_CLASS, default="medium")] = SelectSelector(
             SelectSelectorConfig(options=INSULATION_CLASSES, mode=SelectSelectorMode.DROPDOWN)
@@ -207,6 +210,8 @@ def _build_battery_schema(tier: str) -> vol.Schema:
         vol.Required(CONF_MAX_DISCHARGE_KW): _number(0.1, 100, 0.1),
     }
     if tier in (ConfigTier.ADVANCED, ConfigTier.PRO):
+        # Live SoC (%) — coordinator multiplies by capacity_kwh for initial_state (FR-104/105).
+        fields[vol.Optional(CONF_SOC_ENTITY)] = _entity("sensor")
         fields[vol.Optional(CONF_CHARGE_EFFICIENCY, default=0.95)] = _number(0.5, 1.0, 0.01)
         fields[vol.Optional(CONF_DISCHARGE_EFFICIENCY, default=0.95)] = _number(0.5, 1.0, 0.01)
     if tier == ConfigTier.PRO:
@@ -227,13 +232,14 @@ def _build_pv_forecast_schema(tier: str) -> vol.Schema:
         ),
     }
     if tier in (ConfigTier.ADVANCED, ConfigTier.PRO):
+        # Real PV production forecast entity (FR-103): coordinator reads its
+        # per-slot series and overlays it via generation_forecast.
+        fields[vol.Optional(CONF_FORECAST_ENTITY)] = _entity("sensor")
         fields[vol.Optional(CONF_SOURCE_KIND, default="pv")] = SelectSelector(
             SelectSelectorConfig(options=source_kinds, mode=SelectSelectorMode.DROPDOWN)
         )
         fields[vol.Optional(CONF_AZIMUTH_DEG, default=180)] = _number(0, 359, 1)
         fields[vol.Optional(CONF_TILT_DEG, default=30)] = _number(0, 90, 1)
-    if tier == ConfigTier.PRO:
-        fields[vol.Optional(CONF_FORECAST_ENTITY)] = _entity("sensor")
     fields.update(_safe_default_schema(tier))
     return vol.Schema(fields)
 
@@ -248,7 +254,8 @@ def _build_ev_charger_schema(tier: str) -> vol.Schema:
         fields[vol.Optional(CONF_MIN_CHARGE_KW, default=0)] = _number(0, 50, 0.1)
         fields[vol.Optional(CONF_PHASES, default=3)] = _number(1, 3, 1)
     if tier == ConfigTier.PRO:
-        fields[vol.Optional(CONF_PLUG_STATE_ENTITY)] = _entity("binary_sensor")
+        # Plug/charge state may be a binary_sensor or a sensor (e.g. go-e car-status).
+        fields[vol.Optional(CONF_PLUG_STATE_ENTITY)] = _entity(["binary_sensor", "sensor"])
         fields[vol.Optional(CONF_SOC_ENTITY)] = _entity("sensor")
         fields[vol.Optional(CONF_BATTERY_CAPACITY_KWH)] = _number(10, 200, 1)
     fields.update(_safe_default_schema(tier))
@@ -362,3 +369,33 @@ class HemmDeviceFlowMixin:
             data_schema=schema,
             errors=errors,
         )
+
+    async def async_step_remove_device(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Step: remove one or more configured devices (FR-503)."""
+        devices = list(self.config_entry.data.get("devices", []))
+        if not devices:
+            return self.async_create_entry(title="", data=self.config_entry.options)
+
+        if user_input is not None:
+            remove_ids = set(user_input.get("devices", []))
+            remaining = [d for d in devices if d.get("id") not in remove_ids]
+            new_data = {**self.config_entry.data, "devices": remaining}
+            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            return self.async_create_entry(title="", data=self.config_entry.options)
+
+        options = [
+            {
+                "value": device.get("id", ""),
+                "label": f"{device.get(CONF_DEVICE_NAME, device.get('id', 'device'))} "
+                f"({device.get(CONF_DEVICE_TYPE, 'unknown')})",
+            }
+            for device in devices
+        ]
+        schema = vol.Schema(
+            {
+                vol.Required("devices"): SelectSelector(
+                    SelectSelectorConfig(options=options, multiple=True, mode=SelectSelectorMode.LIST)
+                ),
+            }
+        )
+        return self.async_show_form(step_id="remove_device", data_schema=schema)

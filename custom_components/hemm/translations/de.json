@@ -70,6 +70,10 @@
     }
   },
   "issues": {
+    "price_unavailable": {
+      "title": "HEMM-Preisquelle nicht verfügbar",
+      "description": "HEMM konnte keinen echten Strompreis aus der konfigurierten Quelle lesen und hat die Optimierung übersprungen, statt mit einem synthetischen Pauschalpreis zu rechnen. Prüfe die konfigurierte Preis-Entität bzw. den Adapter. Die Optimierung wird automatisch fortgesetzt, sobald wieder eine echte Preisreihe verfügbar ist."
+    },
     "solver_degraded": {
       "title": "Solver-Leistung eingeschränkt",
       "description": "Der HEMM-Solver konnte nicht innerhalb der erwarteten Zeit konvergieren. Dies kann auf ein Konfigurationsproblem oder eine zu hohe Geräteanzahl hinweisen."
