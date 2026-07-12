@@ -86,7 +86,8 @@ class HemmPlanSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
         super().__init__(coordinator)
         self._device_id = device_id
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_plan"
-        self._attr_name = f"{device_name} Plan"
+        # Bare role (FR-502): has_entity_name composes "<device name> Plan".
+        self._attr_name = "Plan"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{entry.entry_id}_{device_id}")},
             "name": device_name,
@@ -99,7 +100,10 @@ class HemmPlanSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         plans = self.coordinator.data.get("device_plans", {}) if self.coordinator.data else {}
-        self._attr_native_value = plans.get(self._device_id, {}).get("power_kw", 0.0)
+        plan = plans.get(self._device_id, {})
+        self._attr_native_value = plan.get("power_kw", 0.0)
+        # FR-501: forward schedule attribute so the shadow plan is inspectable.
+        self._attr_extra_state_attributes = {"schedule": plan.get("schedule", [])}
         self.async_write_ha_state()
 
 
@@ -121,7 +125,7 @@ class HemmConfidenceSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
         super().__init__(coordinator)
         self._device_id = device_id
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_confidence"
-        self._attr_name = f"{device_name} Confidence"
+        self._attr_name = "Confidence"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{entry.entry_id}_{device_id}")},
             "name": device_name,
@@ -154,7 +158,7 @@ class HemmModeSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
         super().__init__(coordinator)
         self._device_id = device_id
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_mode"
-        self._attr_name = f"{device_name} Mode"
+        self._attr_name = "Mode"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{entry.entry_id}_{device_id}")},
             "name": device_name,
@@ -189,7 +193,7 @@ class HemmReasonSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
         super().__init__(coordinator)
         self._device_id = device_id
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_reason"
-        self._attr_name = f"{device_name} Reason"
+        self._attr_name = "Reason"
         self._attr_native_value = "idle"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, f"{entry.entry_id}_{device_id}")},

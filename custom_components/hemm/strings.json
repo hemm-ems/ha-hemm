@@ -74,6 +74,10 @@
       "title": "Solver performance degraded",
       "description": "The HEMM solver did not converge within the expected time. This may indicate a configuration issue or excessive device count."
     },
+    "price_unavailable": {
+      "title": "HEMM price source unavailable",
+      "description": "HEMM could not read a real electricity price from the configured source, so it skipped optimizing rather than run on a synthetic flat price. Check the configured price entity/adapter. Optimization resumes automatically once a real price series is available again."
+    },
     "actuation_verify_failed": {
       "title": "HEMM actuation verification failed",
       "description": "HEMM could not verify an actuation for device {device_id}. The device safe default was invoked. Review the user script and verification entity."

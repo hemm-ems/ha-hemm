@@ -12,15 +12,25 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
+from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+)
 
 from .const import (
     CONF_ACTUATION_ENABLED,
+    CONF_FEED_IN_TARIFF,
     CONF_HORIZON_HOURS,
     CONF_MAX_ITERATIONS,
     CONF_NAME,
     CONF_PRICE_ADAPTER,
+    CONF_PRICE_ENTITY,
     CONF_SOLVER_BACKEND,
     CONF_WATCHDOG_TIMEOUT_SECONDS,
+    CONF_WEATHER_ENTITY,
     DEFAULT_ACTUATION_ENABLED,
     DEFAULT_HORIZON_HOURS,
     DEFAULT_MAX_ITERATIONS,
@@ -40,9 +50,18 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_HORIZON_HOURS, default=DEFAULT_HORIZON_HOURS): vol.All(int, vol.Range(min=1, max=72)),
         vol.Required(CONF_MAX_ITERATIONS, default=DEFAULT_MAX_ITERATIONS): vol.All(int, vol.Range(min=5, max=500)),
         vol.Required(CONF_PRICE_ADAPTER, default=DEFAULT_PRICE_ADAPTER): vol.In(PRICE_ADAPTERS),
+        # Real tariff source (FR-101): read live and passed to the adapter as a
+        # pre-fetched series. Optional so the flow degrades to the adapter's own
+        # fetch, but without it the template default refuses to run on flat data.
+        vol.Optional(CONF_PRICE_ENTITY): EntitySelector(EntitySelectorConfig(domain="sensor")),
         vol.Required(CONF_SOLVER_BACKEND, default=DEFAULT_SOLVER_BACKEND): vol.In(SOLVER_BACKENDS),
     }
 )
+
+
+def _suggest(value: object) -> dict[str, object]:
+    """Pre-fill an optional field with the current value without forcing a default."""
+    return {"suggested_value": value} if value not in (None, "") else {}
 
 
 class HemmConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -75,12 +94,18 @@ class HemmOptionsFlow(HemmDeviceFlowMixin, OptionsFlow):
             action = user_input.get("action", "settings")
             if action == "add_device":
                 return await self.async_step_select_device()
+            if action == "remove_device":
+                return await self.async_step_remove_device()
             return await self.async_step_settings()
 
         schema = vol.Schema(
             {
                 vol.Required("action", default="settings"): vol.In(
-                    {"settings": "Adjust settings", "add_device": "Add a device"}
+                    {
+                        "settings": "Adjust settings",
+                        "add_device": "Add a device",
+                        "remove_device": "Remove a device",
+                    }
                 ),
             }
         )
@@ -114,6 +139,28 @@ class HemmOptionsFlow(HemmDeviceFlowMixin, OptionsFlow):
                         self.config_entry.data.get(CONF_PRICE_ADAPTER, DEFAULT_PRICE_ADAPTER),
                     ),
                 ): vol.In(PRICE_ADAPTERS),
+                vol.Optional(
+                    CONF_PRICE_ENTITY,
+                    description=_suggest(
+                        self.config_entry.options.get(CONF_PRICE_ENTITY, self.config_entry.data.get(CONF_PRICE_ENTITY))
+                    ),
+                ): EntitySelector(EntitySelectorConfig(domain="sensor")),
+                vol.Optional(
+                    CONF_FEED_IN_TARIFF,
+                    description=_suggest(
+                        self.config_entry.options.get(
+                            CONF_FEED_IN_TARIFF, self.config_entry.data.get(CONF_FEED_IN_TARIFF)
+                        )
+                    ),
+                ): NumberSelector(NumberSelectorConfig(min=0, max=1, step=0.001, mode=NumberSelectorMode.BOX)),
+                vol.Optional(
+                    CONF_WEATHER_ENTITY,
+                    description=_suggest(
+                        self.config_entry.options.get(
+                            CONF_WEATHER_ENTITY, self.config_entry.data.get(CONF_WEATHER_ENTITY)
+                        )
+                    ),
+                ): EntitySelector(EntitySelectorConfig(domain="weather")),
                 vol.Required(
                     CONF_SOLVER_BACKEND,
                     default=self.config_entry.options.get(

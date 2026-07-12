@@ -19,6 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 ISSUE_SOLVER_DEGRADED = "solver_degraded"
 ISSUE_VERIFY_FAILED = "actuation_verify_failed"
 ISSUE_SELF_CONFIRMING = "actuation_self_confirming"
+ISSUE_PRICE_UNAVAILABLE = "price_unavailable"
 
 
 class _ConfirmOnlyRepairFlow(RepairsFlow):
@@ -41,6 +42,16 @@ class _ConfirmOnlyRepairFlow(RepairsFlow):
 
 class HemmSolverDegradedRepairFlow(_ConfirmOnlyRepairFlow):
     """Handler for solver degraded repair flow."""
+
+
+class HemmPriceUnavailableRepairFlow(_ConfirmOnlyRepairFlow):
+    """Handler for the price-source-unavailable repair flow.
+
+    Raised (FR-102) when the configured price source can't be read: HEMM
+    refuses to optimize on synthetic data and skips the solve until the
+    tariff source recovers. The fix is the user pointing HEMM at a working
+    price entity / adapter, then confirming.
+    """
 
 
 class HemmActuationRepairFlow(_ConfirmOnlyRepairFlow):
@@ -83,6 +94,23 @@ async def async_create_self_confirming_issue(hass: HomeAssistant, *, device_id: 
     )
 
 
+async def async_create_price_unavailable_issue(hass: HomeAssistant) -> None:
+    """Raise a repair issue when the configured price source can't be read (FR-102)."""
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        ISSUE_PRICE_UNAVAILABLE,
+        is_fixable=True,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE_PRICE_UNAVAILABLE,
+    )
+
+
+def async_clear_price_unavailable_issue(hass: HomeAssistant) -> None:
+    """Clear the price-unavailable repair issue once a real price series is read again."""
+    ir.async_delete_issue(hass, DOMAIN, ISSUE_PRICE_UNAVAILABLE)
+
+
 async def async_create_fix_flow(
     hass: object,
     issue_id: str,
@@ -97,6 +125,8 @@ async def async_create_fix_flow(
     """
     if issue_id == ISSUE_SOLVER_DEGRADED:
         return HemmSolverDegradedRepairFlow()
+    if issue_id == ISSUE_PRICE_UNAVAILABLE:
+        return HemmPriceUnavailableRepairFlow()
     if issue_id.startswith(f"{ISSUE_VERIFY_FAILED}_") or issue_id.startswith(f"{ISSUE_SELF_CONFIRMING}_"):
         return HemmActuationRepairFlow()
     _LOGGER.warning("async_create_fix_flow: no dispatch known for issue_id=%s, using generic confirm flow", issue_id)

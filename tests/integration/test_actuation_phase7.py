@@ -182,10 +182,18 @@ class TestPhase7ActuationContainer:
             action_script="script.hemm_phase7_active_pass",
             verify_entity="input_boolean.hemm_phase7_verify_pass",
         )
+        # RW1/FR-102: with no configured price entity the template default no
+        # longer fabricates a flat price — it skips the solve rather than optimize
+        # on synthetic data. This plan-driven scenario needs a real price, so
+        # inject a varying manual curve (bypasses the price-entity path).
+        hactl.svc_call(
+            "hemm.set_price_curve",
+            {"prices": [0.10, 0.20, 0.30, 0.40, 0.30, 0.20] * 4, "resolution_minutes": 60},
+        )
         # Since core 2026.7.1 (honest round-trip losses + feed-in settlement) an
-        # unconstrained battery on a flat price correctly plans 0 kW, so a bare
-        # replan actuates nothing. Force demand: 50%→80% of 10 kWh within 3
-        # slots at 5 kW max means even the first slot must charge (pigeonhole).
+        # unconstrained battery correctly plans 0 kW, so a bare replan actuates
+        # nothing. Force demand: 50%→80% of 10 kWh within 3 slots at 5 kW max
+        # means even the first slot must charge (pigeonhole).
         deadline = (datetime.now(UTC) + timedelta(minutes=45)).isoformat()
         window_id = "sc001_forced_charge"
         result = hactl.svc_call(
