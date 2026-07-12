@@ -37,8 +37,23 @@ from custom_components.hemm.const import (
 from custom_components.hemm.coordinator import HemmCoordinator
 from custom_components.hemm.device_flow import _build_ev_charger_schema
 from custom_components.hemm.repairs import ISSUE_PRICE_UNAVAILABLE
+from custom_components.hemm.time import HAClock
 
 T0 = datetime(2026, 7, 12, 0, 0, tzinfo=UTC)
+
+
+class _FrozenClock(HAClock):
+    """Deterministic Clock — freezes ``now()`` so horizon anchoring is testable.
+
+    A live tariff series starts at 00:00 today; the coordinator drops elapsed slots
+    relative to ``now()``. Without a fixed clock these tests would depend on wall time.
+    """
+
+    def __init__(self, now: datetime) -> None:
+        self._now = now
+
+    def now(self) -> datetime:
+        return self._now
 
 
 class _RecordingSolver:
@@ -100,7 +115,9 @@ def _pv(forecast_entity: str | None = None) -> dict[str, Any]:
     return device
 
 
-def _make_coordinator(hass: HomeAssistant, devices: list[dict[str, Any]], **hub: Any) -> HemmCoordinator:
+def _make_coordinator(
+    hass: HomeAssistant, devices: list[dict[str, Any]], *, now: datetime = T0, **hub: Any
+) -> HemmCoordinator:
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="HEMM",
@@ -108,7 +125,9 @@ def _make_coordinator(hass: HomeAssistant, devices: list[dict[str, Any]], **hub:
         unique_id=f"{DOMAIN}_rw1",
     )
     entry.add_to_hass(hass)
-    return HemmCoordinator(hass, entry)
+    # Freeze the clock at the price curve's start by default, so the anchoring slice is
+    # a no-op for tests that assert on the full positional series.
+    return HemmCoordinator(hass, entry, clock=_FrozenClock(now))
 
 
 def _set_price_entity(hass: HomeAssistant, entity_id: str, values: list[float]) -> None:
@@ -132,6 +151,40 @@ async def test_price_entity_series_reaches_solve(hass: HomeAssistant) -> None:
     prices = [v for _, v in rec.calls[0]["price_forecast"]]
     assert prices[:4] == [0.10, 0.30, 0.05, 0.25]
     assert len(set(prices)) > 1, "price curve must vary, not be a flat fallback"
+
+
+@pytest.mark.unit
+@pytest.mark.req("003:FR-101")
+async def test_horizon_anchored_to_current_slot(hass: HomeAssistant) -> None:
+    """The solve is anchored at the current slot, not the price curve's 00:00 start.
+
+    Regression: a live tariff series begins at 00:00 today and the MILP aligns prices
+    positionally (slot ``i`` == ``forecast[i]``) and stamps the plan from
+    ``forecast[0][0]``. Passing the raw series anchored the solve at midnight — it
+    planned the elapsed part of the day and applied the measured SoC/temperature at
+    00:00. The coordinator must drop the elapsed slots first so ``forecast[0]`` is the
+    slot containing ``now``.
+    """
+    coordinator = _make_coordinator(
+        hass, [_battery("sensor.batt_soc")], now=T0 + timedelta(hours=3), **{CONF_PRICE_ENTITY: "sensor.tariff"}
+    )
+    rec = _RecordingSolver()
+    coordinator._get_solver = lambda *a, **k: rec  # type: ignore[assignment]
+    # A distinct price per hour of the whole day, starting at 00:00.
+    _set_price_entity(hass, "sensor.tariff", [round(0.10 + 0.01 * i, 2) for i in range(24)])
+    hass.states.async_set("sensor.batt_soc", "40")  # percent, measured "now" (03:00)
+
+    await coordinator.async_run_solver()
+
+    assert rec.calls
+    fc = rec.calls[0]["price_forecast"]
+    # First horizon slot is 03:00 (the current slot) carrying the hour-3 price -- the
+    # 00:00 to 02:00 slots are dropped, not fed to the solver as "the plan".
+    assert fc[0][0] == T0 + timedelta(hours=3)
+    assert fc[0][1] == pytest.approx(0.13)
+    assert all(ts >= T0 + timedelta(hours=3) for ts, _ in fc)
+    # The measured SoC is the start-of-horizon (03:00) state, not a midnight state.
+    assert rec.calls[0]["initial_state"]["battery_1"]["soc_kwh"] == pytest.approx(9.0 * 0.40)
 
 
 @pytest.mark.unit

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2026.7.4] - 2026-07-12
+
+### Fixed
+
+- **Horizon anchored to the current slot, not midnight (003:RW1 live-verify follow-up).** A live tariff series begins at 00:00 today, and the central MILP aligns prices to slots positionally and stamps the plan from the first price timestamp. The coordinator passed the raw series, so every solve was anchored at midnight — it planned the already-elapsed part of the day, applied the **measured** SoC/temperature (`initial_state`) at 00:00 instead of now, ended the 24 h horizon at 00:00 tomorrow (only a few hours ahead of an afternoon solve), and made the plan sensor report the midnight slot as the "current" setpoint. The coordinator now drops elapsed slots so the horizon starts at the slot containing `now`; found during the RW1 live verify on a real home.
+
 ## [2026.7.3] - 2026-07-12
 
 ### Added
