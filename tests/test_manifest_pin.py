@@ -22,5 +22,5 @@ def test_manifest_core_pin() -> None:
     # `version` can be >= the pinned core version.
     manifest = json.loads((REPO_ROOT / "custom_components" / "hemm" / "manifest.json").read_text(encoding="utf-8"))
 
-    assert manifest["requirements"] == ["hemm==2026.7.1"]
+    assert manifest["requirements"] == ["hemm==2026.7.2"]
     assert manifest["version"] == "2026.7.2"
