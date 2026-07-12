@@ -172,9 +172,9 @@
           "name": "Anforderungstyp",
           "description": "Art der Randbedingung (z. B. min_soc_until, reach_min_temp_once)."
         },
-        "requirement_value": {
-          "name": "Anforderungswert",
-          "description": "Numerischer Wert für die Randbedingung."
+        "requirement_params": {
+          "name": "Anforderungsparameter",
+          "description": "Parameter für die Randbedingung, z. B. {\"min_soc_pct\": 80}."
         },
         "flex_cost_per_hour_early": {
           "name": "Flex-Kosten",

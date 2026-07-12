@@ -1,0 +1,185 @@
+# HEMM service definitions. Field names/descriptions are localized via the
+# `services:` block in strings.json / translations. Schemas here mirror
+# custom_components/hemm/services.py (keep in lockstep).
+
+replan:
+  fields:
+    device_filter:
+      example: ["battery_1"]
+      selector:
+        text:
+          multiple: true
+    dry_run:
+      default: false
+      selector:
+        boolean:
+
+simulate:
+  fields:
+    horizon_hours:
+      example: 24
+      selector:
+        number:
+          min: 1
+          max: 72
+          mode: box
+    dry_run:
+      default: false
+      selector:
+        boolean:
+
+set_price_curve:
+  fields:
+    prices:
+      required: true
+      example: [0.10, 0.20, 0.30, 0.25]
+      selector:
+        object:
+    resolution_minutes:
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 1440
+          mode: box
+    dry_run:
+      default: false
+      selector:
+        boolean:
+
+set_solver:
+  fields:
+    backend:
+      required: true
+      selector:
+        select:
+          options:
+            - milp_central
+            - distributed
+    dry_run:
+      default: false
+      selector:
+        boolean:
+
+add_constraint_window:
+  fields:
+    window_id:
+      required: true
+      example: morning_charge
+      selector:
+        text:
+    device_id:
+      required: true
+      example: battery_1
+      selector:
+        text:
+    deadline:
+      required: true
+      selector:
+        datetime:
+    requirement_type:
+      required: true
+      example: min_soc_until
+      selector:
+        text:
+    requirement_params:
+      example: '{"min_soc_pct": 80}'
+      selector:
+        object:
+    flex_cost_per_hour_early:
+      default: 0.0
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.01
+          mode: box
+    priority_penalty:
+      default: 1.0
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 0.1
+          mode: box
+    ttl_seconds:
+      example: 3600
+      selector:
+        number:
+          min: 0
+          max: 604800
+          mode: box
+    dry_run:
+      default: false
+      selector:
+        boolean:
+
+remove_constraint:
+  fields:
+    window_id:
+      required: true
+      example: morning_charge
+      selector:
+        text:
+    dry_run:
+      default: false
+      selector:
+        boolean:
+
+bump_priority:
+  fields:
+    window_id:
+      required: true
+      example: morning_charge
+      selector:
+        text:
+    new_penalty:
+      required: true
+      example: 50.0
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 0.1
+          mode: box
+    dry_run:
+      default: false
+      selector:
+        boolean:
+
+tick:
+  fields:
+    dry_run:
+      default: false
+      selector:
+        boolean:
+
+force_watchdog:
+  fields:
+    simulate_stale_for_seconds:
+      example: 2000
+      selector:
+        number:
+          min: 0
+          max: 86400
+          mode: box
+
+actuate_now:
+  fields:
+    device_id:
+      required: true
+      example: battery_1
+      selector:
+        text:
+    action_name:
+      default: active
+      selector:
+        text:
+    dry_run:
+      default: false
+      selector:
+        boolean:
+    pre_call_check:
+      default: true
+      selector:
+        boolean:

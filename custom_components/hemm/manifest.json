@@ -8,5 +8,5 @@
   "issue_tracker": "https://github.com/hemm-ems/ha-hemm/issues",
   "iot_class": "local_polling",
   "requirements": ["hemm==2026.7.2"],
-  "version": "2026.7.2"
+  "version": "2026.7.3"
 }

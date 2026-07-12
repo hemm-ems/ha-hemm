@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2026.7.3] - 2026-07-12
+
+### Added
+
+- **RW1 — the coordinator reads the real home (003:RW1).** Every solve now starts from measured state instead of synthetic defaults:
+  - **Live price (FR-101/102):** a hub **price entity** is read each tick and passed to the price adapter as a pre-fetched series (Nordpool/Tibber/EPEX attribute shapes supported). **The silent flat-price fallback is removed** — an unreadable price source (or an adapter that yields nothing) now raises a `price_unavailable` repair and **skips the solve** rather than optimize on a fake flat price; it clears automatically on recovery.
+  - **Real PV (FR-103):** a PV device's **forecast entity** (Forecast.Solar `watts` dict / Solcast list) is resampled to per-slot kW and overlaid via `generation_forecast`.
+  - **Measured state + economics (FR-104/105):** battery **SoC entity** (% → kWh) and optional room/tank **temperature entities** seed the solver's `initial_state`; the MILP is built with a hub **feed-in tariff** and outdoor temperature from an optional **weather entity**.
+- **`services.yaml`** for all ten services (`replan`, `simulate`, `set_price_curve`, `set_solver`, `add_constraint_window`, `remove_constraint`, `bump_priority`, `tick`, `force_watchdog`, `actuate_now`) — fixes the `Failed to load services.yaml` startup error and gives every service field a UI selector.
+
+### Changed
+
+- **Core pinned to `hemm==2026.7.2`** — brings the solver `initial_state` API and Backend B weather-driven COP that RW1 relies on.
+- Plan sensors expose a per-slot `schedule` attribute and use bare-role names (`Plan`/`Confidence`/`Mode`/`Reason`), composed with the device name (fixes the previous name duplication).
+- EV plug/charge-state selector accepts a `sensor` (e.g. go-e car-status), not just `binary_sensor`; the options flow gains a **remove-device** step.
+
+### Fixed
+
+- The `add_constraint_window` service translation used `requirement_value`; renamed to the real schema key `requirement_params` so the localized field attaches.
+
 ## [2026.7.2] - 2026-07-11
 
 ### Fixed
