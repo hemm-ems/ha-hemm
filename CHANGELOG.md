@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2026.7.5] - 2026-07-16
+
+### Added
+
+- **Grid / main-fuse connection limits (003:RW2, FR-201).** New hub settings `grid_import_limit_kw` / `grid_export_limit_kw` are passed into the central solver, which bounds every slot's grid import/export; a cap the fixed loads cannot satisfy fails the solve loudly instead of over-drawing the fuse. Requires hemm core 2026.7.3.
+- **Second PV forecast entity (`forecast_entity_2`).** A PV device can name an additional forecast entity (e.g. Solcast's *tomorrow* sensor); both series are merged by timestamp before resampling, so a 24 h horizon keeps a real PV curve past midnight instead of a zero back half.
+
+### Fixed
+
+- **Empty-price-entity synthetic edge (003:RW2 follow-up to FR-102).** With no price entity configured, a self-fetching adapter mis-set as the price source could still synthesize a curve and solve on it. The price role now only accepts a pre-fetched real series (the price entity's curve or the manual override) — no entity, no solve.
+- **Peak discharge reason label (bug#2).** With core 2026.7.3, battery discharge into top-quartile price slots is labelled `expensive_grid` instead of `pv_surplus` in plan schedules.
+
+### Changed
+
+- **FR-205 field migration.** `south_facing_windows` (room) and `defrost_lockout_minutes` (heat pump) are removed from the device flows — core 2026.7.3 rejects them as unmodeled no-ops. Existing device configs keep loading: the manifest builder drops legacy values with a loud warning. Heat-pump `min_modulation_pct` and EV `min_charge_kw` now genuinely bind (semi-continuous floors), and EV phase/power combinations are validated (32 A x 230 V per phase).
+
 ## [2026.7.4] - 2026-07-12
 
 ### Fixed
