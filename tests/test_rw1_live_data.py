@@ -137,7 +137,6 @@ def _set_price_entity(hass: HomeAssistant, entity_id: str, values: list[float]) 
 
 
 @pytest.mark.unit
-@pytest.mark.req("003:FR-101")
 async def test_price_entity_series_reaches_solve(hass: HomeAssistant) -> None:
     """A configured price entity's curve reaches solve() — not a flat synthetic price."""
     coordinator = _make_coordinator(hass, [_battery()], **{CONF_PRICE_ENTITY: "sensor.tariff"})
@@ -154,7 +153,6 @@ async def test_price_entity_series_reaches_solve(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.req("003:FR-101")
 async def test_horizon_anchored_to_current_slot(hass: HomeAssistant) -> None:
     """The solve is anchored at the current slot, not the price curve's 00:00 start.
 
@@ -188,7 +186,6 @@ async def test_horizon_anchored_to_current_slot(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.req("003:FR-102")
 async def test_missing_price_raises_repair_and_skips_solve(hass: HomeAssistant) -> None:
     """A configured-but-unavailable price entity → repair issue + no synthetic solve."""
     coordinator = _make_coordinator(hass, [_battery()], **{CONF_PRICE_ENTITY: "sensor.tariff"})
@@ -204,7 +201,6 @@ async def test_missing_price_raises_repair_and_skips_solve(hass: HomeAssistant) 
 
 
 @pytest.mark.unit
-@pytest.mark.req("003:FR-102")
 async def test_price_recovery_clears_repair(hass: HomeAssistant) -> None:
     """Once a real price series returns, the price-unavailable repair is cleared."""
     coordinator = _make_coordinator(hass, [_battery()], **{CONF_PRICE_ENTITY: "sensor.tariff"})
@@ -222,7 +218,6 @@ async def test_price_recovery_clears_repair(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.req("003:FR-103")
 async def test_pv_forecast_reaches_generation_overlay(hass: HomeAssistant) -> None:
     """A configured forecast entity's series reaches solve() as a non-zero generation overlay."""
     coordinator = _make_coordinator(hass, [_pv("sensor.pv_fc")], **{CONF_PRICE_ENTITY: "sensor.tariff"})
@@ -244,7 +239,6 @@ async def test_pv_forecast_reaches_generation_overlay(hass: HomeAssistant) -> No
 
 
 @pytest.mark.unit
-@pytest.mark.req("003:FR-105")
 async def test_battery_soc_reaches_initial_state(hass: HomeAssistant) -> None:
     """A configured SoC entity (%) becomes initial_state[dev]['soc_kwh'] = capacity * pct/100."""
     coordinator = _make_coordinator(hass, [_battery("sensor.batt_soc")], **{CONF_PRICE_ENTITY: "sensor.tariff"})
@@ -262,7 +256,6 @@ async def test_battery_soc_reaches_initial_state(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.req("003:FR-102")
 async def test_no_price_entity_no_synthetic_solve(hass: HomeAssistant) -> None:
     """Default template adapter with no price entity produces nothing → skip, never flat 0.30."""
     coordinator = _make_coordinator(hass, [_battery()])  # no price entity, template default
@@ -275,7 +268,6 @@ async def test_no_price_entity_no_synthetic_solve(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.req("003:FR-503")
 def test_ev_plug_state_accepts_sensor_domain() -> None:
     """EV plug/charge-state selector accepts a sensor domain (go-e car-status is a sensor)."""
     schema = _build_ev_charger_schema("pro")
