@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from hemm_core.manifest.types import DeviceManifest
 
 from .const import (
     CONF_ACTIONS,
@@ -60,6 +58,11 @@ from .const import (
     CONF_WINDOW_AREA_M2,
     DeviceType,
 )
+
+if TYPE_CHECKING:
+    from hemm_core.manifest.types import DeviceManifest
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _build_action(spec: Any) -> Any:
@@ -189,6 +192,14 @@ def _build_room(
 ) -> Any:
     from hemm_core.manifest.types import RoomManifest
 
+    if cfg.get(CONF_SOUTH_FACING):
+        # Legacy device config: core rejects the flag as an unmodeled no-op
+        # (FR-205, hemm 2026.7.3). Dropped here so the entry keeps loading.
+        _LOGGER.warning(
+            "Device '%s': south_facing_windows is no longer supported (solar gains "
+            "are not modeled) and was ignored; remove it from the device config",
+            name,
+        )
     return RoomManifest(
         device_id=device_id,
         name=name,
@@ -200,7 +211,6 @@ def _build_room(
         thermal_mass_kwh_per_k=cfg.get(CONF_THERMAL_MASS),
         u_value_w_per_m2k=cfg.get(CONF_U_VALUE),
         window_area_m2=cfg.get(CONF_WINDOW_AREA_M2),
-        south_facing_windows=cfg.get(CONF_SOUTH_FACING, False),
     )
 
 
@@ -237,6 +247,14 @@ def _build_heat_pump(
 ) -> Any:
     from hemm_core.manifest.types import HeatPumpManifest
 
+    if cfg.get(CONF_DEFROST_LOCKOUT_MIN):
+        # Legacy device config: core rejects the field as an unmodeled no-op
+        # (FR-205, hemm 2026.7.3). Dropped here so the entry keeps loading.
+        _LOGGER.warning(
+            "Device '%s': defrost_lockout_minutes is no longer supported (defrost "
+            "is not modeled) and was ignored; remove it from the device config",
+            name,
+        )
     return HeatPumpManifest(
         device_id=device_id,
         name=name,
@@ -246,7 +264,6 @@ def _build_heat_pump(
         max_power_kw=cfg[CONF_MAX_POWER_KW],
         vendor_model=cfg.get(CONF_VENDOR_MODEL),
         min_modulation_pct=cfg.get(CONF_MIN_MODULATION_PCT, 0),
-        defrost_lockout_minutes=cfg.get(CONF_DEFROST_LOCKOUT_MIN, 0),
         source_type=cfg.get(CONF_SOURCE_TYPE, "air"),
         sink_type=cfg.get(CONF_SINK_TYPE, "water"),
     )

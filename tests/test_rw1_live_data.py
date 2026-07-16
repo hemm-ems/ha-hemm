@@ -24,6 +24,7 @@ from custom_components.hemm.const import (
     CONF_DEVICE_TYPE,
     CONF_FORECAST_ADAPTER,
     CONF_FORECAST_ENTITY,
+    CONF_FORECAST_ENTITY_2,
     CONF_MAX_CHARGE_KW,
     CONF_MAX_DISCHARGE_KW,
     CONF_NAME,
@@ -281,3 +282,100 @@ def test_ev_plug_state_accepts_sensor_domain() -> None:
     assert "sensor" in domain and "binary_sensor" in domain
     # And a plain vol.Schema build with a sensor entity must validate.
     assert isinstance(schema, vol.Schema)
+
+
+# ── RW2 ha-hemm tranche (specs/003 Phase 2 follow-up) ─────────────────────────
+
+
+@pytest.mark.unit
+async def test_self_fetching_price_adapter_never_synthesizes(hass: HomeAssistant) -> None:
+    """FR-102 edge: no price entity + a self-fetching adapter must NOT invent a curve.
+
+    With no entity configured the old guard was bypassed and a solar adapter
+    mis-set as the price source would synthesize a forecast and solve on it.
+    """
+    coordinator = _make_coordinator(hass, [_battery()], price_adapter="forecast_solar")
+    rec = _RecordingSolver()
+    coordinator._get_solver = lambda *a, **k: rec  # type: ignore[assignment]
+
+    await coordinator.async_run_solver()
+
+    assert not rec.calls, "a self-fetching adapter must not synthesize the price role"
+    registry = ir.async_get(hass)
+    assert registry.async_get_issue(DOMAIN, ISSUE_PRICE_UNAVAILABLE) is not None
+
+
+@pytest.mark.unit
+async def test_pv_two_forecast_entities_concatenate(hass: HomeAssistant) -> None:
+    """A second forecast entity (e.g. Solcast tomorrow) extends the PV overlay past midnight."""
+    device = _pv("sensor.pv_today")
+    device[CONF_FORECAST_ENTITY_2] = "sensor.pv_tomorrow"
+    coordinator = _make_coordinator(hass, [device], **{CONF_PRICE_ENTITY: "sensor.tariff"})
+    rec = _RecordingSolver()
+    coordinator._get_solver = lambda *a, **k: rec  # type: ignore[assignment]
+    _set_price_entity(hass, "sensor.tariff", [0.30] * 24)
+
+    def _half_day(start: datetime, kw: float) -> list[dict[str, Any]]:
+        return [{"period_start": (start + timedelta(minutes=30 * i)).isoformat(), "pv_estimate": kw} for i in range(24)]
+
+    hass.states.async_set("sensor.pv_today", "1", {"detailedForecast": _half_day(T0, 2.0)})
+    hass.states.async_set("sensor.pv_tomorrow", "1", {"detailedForecast": _half_day(T0 + timedelta(hours=12), 3.0)})
+
+    await coordinator.async_run_solver()
+
+    assert rec.calls
+    overlay = rec.calls[0]["generation_forecast"]
+    assert overlay is not None and "pv_1" in overlay
+    slots = overlay["pv_1"]
+    assert slots[4] == pytest.approx(2.0)  # inside the first entity's series
+    assert slots[60] == pytest.approx(3.0)  # 15 h in — only the second entity covers this
+
+
+@pytest.mark.unit
+async def test_grid_limits_reach_the_solver(hass: HomeAssistant) -> None:
+    """FR-201: configured connection limits are passed into the MILP constructor."""
+    coordinator = _make_coordinator(
+        hass,
+        [_battery()],
+        grid_import_limit_kw=17.3,
+        grid_export_limit_kw=9.0,
+    )
+    solver = coordinator._get_solver()
+    assert solver._grid_import_limit_kw == pytest.approx(17.3)
+    assert solver._grid_export_limit_kw == pytest.approx(9.0)
+
+    unbounded = _make_coordinator(hass, [_battery()])._get_solver()
+    assert unbounded._grid_import_limit_kw is None
+    assert unbounded._grid_export_limit_kw is None
+
+
+@pytest.mark.unit
+def test_legacy_rejected_fields_dropped_with_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """Legacy south_facing/defrost configs keep loading — dropped loudly, not crashing."""
+    import logging
+
+    from custom_components.hemm.manifest_builder import build_manifest
+
+    room = {
+        "id": "room_1",
+        CONF_DEVICE_TYPE: "room",
+        CONF_DEVICE_NAME: "Living Room",
+        CONF_SAFE_DEFAULT_SCRIPT: "script.noop",
+        "floor_area_m2": 30.0,
+        "south_facing_windows": True,
+    }
+    hp = {
+        "id": "hp_1",
+        CONF_DEVICE_TYPE: "heat_pump",
+        CONF_DEVICE_NAME: "Heat Pump",
+        CONF_SAFE_DEFAULT_SCRIPT: "script.noop",
+        "max_power_kw": 5.0,
+        "defrost_lockout_minutes": 30,
+    }
+    with caplog.at_level(logging.WARNING, logger="custom_components.hemm.manifest_builder"):
+        room_manifest = build_manifest(room)
+        hp_manifest = build_manifest(hp)
+    assert room_manifest.south_facing_windows is False
+    assert hp_manifest.defrost_lockout_minutes == 0
+    assert "south_facing_windows is no longer supported" in caplog.text
+    assert "defrost_lockout_minutes is no longer supported" in caplog.text

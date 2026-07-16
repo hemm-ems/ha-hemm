@@ -41,13 +41,13 @@ from .const import (
     CONF_CAPACITY_KWH,
     CONF_CHARGE_EFFICIENCY,
     CONF_CONTROL_CLASS,
-    CONF_DEFROST_LOCKOUT_MIN,
     CONF_DEVICE_NAME,
     CONF_DEVICE_TYPE,
     CONF_DISCHARGE_EFFICIENCY,
     CONF_FLOOR_AREA_M2,
     CONF_FORECAST_ADAPTER,
     CONF_FORECAST_ENTITY,
+    CONF_FORECAST_ENTITY_2,
     CONF_HYSTERESIS_K,
     CONF_INSULATION_CLASS,
     CONF_LOAD_PROFILE_ENTITY,
@@ -70,7 +70,6 @@ from .const import (
     CONF_SOC_ENTITY,
     CONF_SOURCE_KIND,
     CONF_SOURCE_TYPE,
-    CONF_SOUTH_FACING,
     CONF_STANDBY_LOSS_W,
     CONF_TEMP_ENTITY,
     CONF_THERMAL_MASS,
@@ -142,7 +141,8 @@ def _build_room_schema(tier: str) -> vol.Schema:
         fields[vol.Optional(CONF_THERMAL_MASS)] = _number(0.1, 100, 0.1)
         fields[vol.Optional(CONF_U_VALUE)] = _number(0.1, 10, 0.1)
         fields[vol.Optional(CONF_WINDOW_AREA_M2)] = _number(0, 100, 0.5)
-        fields[vol.Optional(CONF_SOUTH_FACING, default=False)] = bool
+        # south_facing_windows removed: core rejects it as an unmodeled no-op
+        # (FR-205) since hemm 2026.7.3.
     fields.update(_safe_default_schema(tier))
     return vol.Schema(fields)
 
@@ -176,8 +176,8 @@ def _build_heat_pump_schema(tier: str) -> vol.Schema:
         fields[vol.Optional(CONF_SINK_TYPE, default="water")] = SelectSelector(
             SelectSelectorConfig(options=sink_types, mode=SelectSelectorMode.DROPDOWN)
         )
-    if tier == ConfigTier.PRO:
-        fields[vol.Optional(CONF_DEFROST_LOCKOUT_MIN, default=0)] = _number(0, 60, 1)
+    # defrost_lockout_minutes removed: core rejects it as an unmodeled no-op
+    # (FR-205) since hemm 2026.7.3.
     fields.update(_safe_default_schema(tier))
     return vol.Schema(fields)
 
@@ -235,6 +235,10 @@ def _build_pv_forecast_schema(tier: str) -> vol.Schema:
         # Real PV production forecast entity (FR-103): coordinator reads its
         # per-slot series and overlays it via generation_forecast.
         fields[vol.Optional(CONF_FORECAST_ENTITY)] = _entity("sensor")
+        # Second forecast entity, merged with the first by timestamp — e.g.
+        # Solcast's "prognose_morgen" so the 24 h horizon keeps a PV curve
+        # after today's entity runs out at midnight.
+        fields[vol.Optional(CONF_FORECAST_ENTITY_2)] = _entity("sensor")
         fields[vol.Optional(CONF_SOURCE_KIND, default="pv")] = SelectSelector(
             SelectSelectorConfig(options=source_kinds, mode=SelectSelectorMode.DROPDOWN)
         )
