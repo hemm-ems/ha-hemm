@@ -23,6 +23,8 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_ACTUATION_ENABLED,
     CONF_FEED_IN_TARIFF,
+    CONF_GRID_EXPORT_LIMIT_KW,
+    CONF_GRID_IMPORT_LIMIT_KW,
     CONF_HORIZON_HOURS,
     CONF_MAX_ITERATIONS,
     CONF_NAME,
@@ -153,6 +155,23 @@ class HemmOptionsFlow(HemmDeviceFlowMixin, OptionsFlow):
                         )
                     ),
                 ): NumberSelector(NumberSelectorConfig(min=0, max=1, step=0.001, mode=NumberSelectorMode.BOX)),
+                # FR-201: grid/main-fuse connection limits. Empty = unbounded.
+                vol.Optional(
+                    CONF_GRID_IMPORT_LIMIT_KW,
+                    description=_suggest(
+                        self.config_entry.options.get(
+                            CONF_GRID_IMPORT_LIMIT_KW, self.config_entry.data.get(CONF_GRID_IMPORT_LIMIT_KW)
+                        )
+                    ),
+                ): NumberSelector(NumberSelectorConfig(min=1, max=200, step=0.1, mode=NumberSelectorMode.BOX)),
+                vol.Optional(
+                    CONF_GRID_EXPORT_LIMIT_KW,
+                    description=_suggest(
+                        self.config_entry.options.get(
+                            CONF_GRID_EXPORT_LIMIT_KW, self.config_entry.data.get(CONF_GRID_EXPORT_LIMIT_KW)
+                        )
+                    ),
+                ): NumberSelector(NumberSelectorConfig(min=1, max=200, step=0.1, mode=NumberSelectorMode.BOX)),
                 vol.Optional(
                     CONF_WEATHER_ENTITY,
                     description=_suggest(

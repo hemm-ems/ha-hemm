@@ -41,7 +41,12 @@
           "price_adapter": "Price source adapter",
           "solver_backend": "Solver backend",
           "actuation_enabled": "Enable live actuation",
-          "watchdog_timeout_seconds": "Watchdog timeout (seconds)"
+          "watchdog_timeout_seconds": "Watchdog timeout (seconds)",
+          "price_entity": "Price entity (forward tariff curve)",
+          "feed_in_tariff": "Feed-in tariff (EUR/kWh)",
+          "weather_entity": "Weather entity",
+          "grid_import_limit_kw": "Grid import limit (kW, main fuse)",
+          "grid_export_limit_kw": "Grid export limit (kW)"
         }
       },
       "select_device": {

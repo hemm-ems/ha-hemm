@@ -41,7 +41,12 @@
           "price_adapter": "Preisquelle",
           "solver_backend": "Solver-Backend",
           "actuation_enabled": "Live-Aktuierung aktivieren",
-          "watchdog_timeout_seconds": "Watchdog-Timeout (Sekunden)"
+          "watchdog_timeout_seconds": "Watchdog-Timeout (Sekunden)",
+          "price_entity": "Preis-Entität (Forward-Tarifkurve)",
+          "feed_in_tariff": "Einspeisevergütung (EUR/kWh)",
+          "weather_entity": "Wetter-Entität",
+          "grid_import_limit_kw": "Netzbezugs-Limit (kW, Hausanschluss)",
+          "grid_export_limit_kw": "Einspeise-Limit (kW)"
         }
       },
       "select_device": {

@@ -22,6 +22,9 @@ from .const import (
     CONF_DEVICE_TYPE,
     CONF_FEED_IN_TARIFF,
     CONF_FORECAST_ENTITY,
+    CONF_FORECAST_ENTITY_2,
+    CONF_GRID_EXPORT_LIMIT_KW,
+    CONF_GRID_IMPORT_LIMIT_KW,
     CONF_HORIZON_HOURS,
     CONF_MAX_ITERATIONS,
     CONF_PRICE_ADAPTER,
@@ -299,6 +302,13 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._feed_in_tariff: float | None = _to_float(
             entry.options.get(CONF_FEED_IN_TARIFF, entry.data.get(CONF_FEED_IN_TARIFF))
         )
+        # Grid/main-fuse connection limits (FR-201): None = unbounded (legacy).
+        self._grid_import_limit_kw: float | None = _to_float(
+            entry.options.get(CONF_GRID_IMPORT_LIMIT_KW, entry.data.get(CONF_GRID_IMPORT_LIMIT_KW))
+        )
+        self._grid_export_limit_kw: float | None = _to_float(
+            entry.options.get(CONF_GRID_EXPORT_LIMIT_KW, entry.data.get(CONF_GRID_EXPORT_LIMIT_KW))
+        )
         self._solver_backend: str = entry.options.get(
             CONF_SOLVER_BACKEND,
             entry.data.get(CONF_SOLVER_BACKEND, DEFAULT_SOLVER_BACKEND),
@@ -418,6 +428,11 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             kwargs["feed_in_tariff"] = feed_in_tariff
         if outdoor_temp_c is not None:
             kwargs["outdoor_temp_c"] = outdoor_temp_c
+        # FR-201: the configured connection/fuse limit bounds every solve.
+        if self._grid_import_limit_kw is not None:
+            kwargs["grid_import_limit_kw"] = self._grid_import_limit_kw
+        if self._grid_export_limit_kw is not None:
+            kwargs["grid_export_limit_kw"] = self._grid_export_limit_kw
         return MILPCentralSolver(**kwargs)
 
     def _get_price_forecast(
@@ -437,16 +452,18 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.info("Using manual price curve (%d slots, %d min resolution)", len(self._manual_prices), res_min)
             return [(now + timedelta(minutes=i * res_min), p) for i, p in enumerate(self._manual_prices)]
 
+        # FR-102 (empty-price-entity edge): the price role only accepts a real,
+        # pre-fetched series — the configured price entity's curve (data=) or the
+        # manual override handled above. A self-fetching adapter mis-set as the
+        # price source (solcast/forecast_solar) must never synthesize a curve.
+        if not price_data:
+            return None
         try:
             from hemm_core.adapters.registry import get_registry
 
             registry = get_registry()
             adapter = registry.get(self._price_adapter)
-            # A configured price entity is read on the event loop and passed in as a
-            # pre-fetched series (data=). Without one, adapters that fetch their own
-            # data (solcast/forecast_solar) still work; the template default cannot
-            # fabricate a curve and legitimately returns nothing here.
-            points = adapter.fetch(data=price_data) if price_data else adapter.fetch(horizon_hours=self._horizon_hours)
+            points = adapter.fetch(data=price_data)
         except Exception:
             _LOGGER.warning("Price adapter '%s' failed to produce a forecast", self._price_adapter)
             return None
@@ -495,15 +512,21 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for device in devices:
             if device.get(CONF_DEVICE_TYPE) != DeviceType.PV_FORECAST:
                 continue
-            entity_id = device.get(CONF_FORECAST_ENTITY)
-            if not entity_id:
-                continue
-            state = self.hass.states.get(entity_id)
-            if state is None or str(state.state).lower() in _UNAVAILABLE_STATES:
-                continue
-            series = _extract_pv_series(state.attributes)
+            # Merge the series of both forecast entities by timestamp: e.g.
+            # Solcast's today + tomorrow entities, so the 24 h horizon keeps a
+            # real PV curve after today's series runs out at midnight.
+            series: list[tuple[datetime, float]] = []
+            for key in (CONF_FORECAST_ENTITY, CONF_FORECAST_ENTITY_2):
+                entity_id = device.get(key)
+                if not entity_id:
+                    continue
+                state = self.hass.states.get(entity_id)
+                if state is None or str(state.state).lower() in _UNAVAILABLE_STATES:
+                    continue
+                series.extend(_extract_pv_series(state.attributes))
             if not series:
                 continue
+            series.sort(key=lambda point: point[0])
             slots = _resample_to_slots(series, t0, n_slots, resolution_minutes)
             if any(v > 0 for v in slots):
                 forecast[device["id"]] = slots

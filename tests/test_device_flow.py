@@ -285,7 +285,6 @@ async def test_heat_pump_pro_mode(hass: HomeAssistant, init_integration: ConfigE
             CONF_MAX_POWER_KW: 8.0,
             "vendor_model": "Daikin Altherma 3",
             "min_modulation_pct": 30.0,
-            "defrost_lockout_minutes": 10.0,
             CONF_SAFE_DEFAULT_SCRIPT: "script.hemm_hp_safe",
             "safe_default_verify_entity": "sensor.hp_status",
             "safe_default_verify_expected": "== off",
@@ -295,7 +294,9 @@ async def test_heat_pump_pro_mode(hass: HomeAssistant, init_integration: ConfigE
     assert result["type"] is FlowResultType.CREATE_ENTRY
     devices = init_integration.data.get("devices", [])
     assert devices[0]["vendor_model"] == "Daikin Altherma 3"
-    assert devices[0]["defrost_lockout_minutes"] == 10.0
+    # defrost_lockout_minutes removed from the flow (FR-205: unmodeled no-op)
+    assert "defrost_lockout_minutes" not in devices[0]
+    assert devices[0]["min_modulation_pct"] == 30.0
     assert devices[0][CONF_TIER] == ConfigTier.PRO
 
 
