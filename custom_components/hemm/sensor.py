@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_DEVICE_NAME, CONF_DEVICE_TYPE, DOMAIN, PLAN_REASONS
 from .coordinator import HemmCoordinator
+from .device_info import child_device_info
 
 
 async def async_setup_entry(
@@ -88,20 +89,17 @@ class HemmPlanSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_plan"
         # Bare role (FR-502): has_entity_name composes "<device name> Plan".
         self._attr_name = "Plan"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{entry.entry_id}_{device_id}")},
-            "name": device_name,
-            "manufacturer": "HEMM",
-            "model": device_type,
-            "via_device": (DOMAIN, entry.entry_id),
-        }
+        self._attr_device_info = child_device_info(
+            entry, coordinator.hub_device_id, device_id, device_name, device_type
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         plans = self.coordinator.data.get("device_plans", {}) if self.coordinator.data else {}
         plan = plans.get(self._device_id, {})
-        self._attr_native_value = plan.get("power_kw", 0.0)
+        # Round off solver float noise (e.g. 3e-16 kW for an idle slot); +0.0 folds -0.0.
+        self._attr_native_value = round(plan.get("power_kw") or 0.0, 3) + 0.0
         # FR-501: forward schedule attribute so the shadow plan is inspectable.
         self._attr_extra_state_attributes = {"schedule": plan.get("schedule", [])}
         self.async_write_ha_state()
@@ -126,13 +124,9 @@ class HemmConfidenceSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
         self._device_id = device_id
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_confidence"
         self._attr_name = "Confidence"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{entry.entry_id}_{device_id}")},
-            "name": device_name,
-            "manufacturer": "HEMM",
-            "model": device_type,
-            "via_device": (DOMAIN, entry.entry_id),
-        }
+        self._attr_device_info = child_device_info(
+            entry, coordinator.hub_device_id, device_id, device_name, device_type
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -159,13 +153,9 @@ class HemmModeSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
         self._device_id = device_id
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_mode"
         self._attr_name = "Mode"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{entry.entry_id}_{device_id}")},
-            "name": device_name,
-            "manufacturer": "HEMM",
-            "model": device_type,
-            "via_device": (DOMAIN, entry.entry_id),
-        }
+        self._attr_device_info = child_device_info(
+            entry, coordinator.hub_device_id, device_id, device_name, device_type
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -195,13 +185,9 @@ class HemmReasonSensor(CoordinatorEntity[HemmCoordinator], SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_reason"
         self._attr_name = "Reason"
         self._attr_native_value = "idle"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{entry.entry_id}_{device_id}")},
-            "name": device_name,
-            "manufacturer": "HEMM",
-            "model": device_type,
-            "via_device": (DOMAIN, entry.entry_id),
-        }
+        self._attr_device_info = child_device_info(
+            entry, coordinator.hub_device_id, device_id, device_name, device_type
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:

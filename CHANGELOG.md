@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2026.7.6] - 2026-10-29
+
+Verified against Home Assistant 2026.10.4 and 2026.11.0b0 (container tier), plus 2026.7.3. Requires hemm core 2026.7.3 (unchanged).
+
+### Fixed
+
+- **HA 2026.10 device-registry deprecations.** Child devices referenced the hub through the identifier-tuple `via_device` (removed in HA 2027.8) before the hub existed. The hub device is now registered in `async_setup_entry` before the platforms load, and children link to it with `via_device_id` on HA ≥ 2026.8 (`via_device` kept for older cores). No lookup through the deprecated `device_registry.async_get_device`.
+- **No solve on an unreadable start state.** A configured battery SoC entity or device temperature entity that is missing/unknown/unavailable now skips the solve (keeping the previous plan) instead of silently solving from the solver's default state. Seen live right after an HA restart, before the inverter integration had set up its SoC sensor: a 4 kW discharge was planned from a battery below min SoC. EV SoC is exempt (unavailable while the car is away).
+- **Horizon capped at the end of the published price curve.** Before the day-ahead prices are out (Tibber: ~13:00), the solver step-held the last price of today across the night; the horizon now ends where the curve ends (at most the configured hours).
+- **Plan sensor state rounded** to 3 decimals (no `3e-16` kW float noise for idle slots).
+
+### Changed
+
+- Diagnostics `tested_ha_version` is now 2026.10.4.
+- New container test `test_hemm_no_frame_reports` fails on any HA frame report (deprecated/bad API use) attributed to hemm.
+
 ## [2026.7.5] - 2026-07-16
 
 ### Added

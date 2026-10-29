@@ -109,7 +109,7 @@ PRICE_ADAPTERS = ["template", "solcast", "forecast_solar"]
 FORECAST_ADAPTERS = ["solcast", "forecast_solar", "template"]
 
 # Tested HA version (set at build time / release)
-TESTED_HA_VERSION = "2025.4.0"
+TESTED_HA_VERSION = "2026.10.4"
 
 # Service names
 SERVICE_REPLAN = "replan"

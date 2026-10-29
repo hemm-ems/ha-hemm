@@ -254,6 +254,26 @@ def _slice_forecast_from_now(forecast: list[tuple[datetime, float]], now: dateti
     return forecast[start:]
 
 
+def _price_horizon_minutes(forecast: list[tuple[datetime, float]], max_minutes: int, resolution_minutes: int) -> int:
+    """Cap the solve horizon at the end of the published price curve.
+
+    The MILP step-holds the last price past the end of the series, so a 24 h solve
+    before the day-ahead auction (Tibber publishes *tomorrow* around 13:00) would plan
+    00:00 to 08:00 tomorrow on an invented price. The last point covers one source step
+    (the spacing of its last two points, or one solver slot). Counted from
+    ``forecast[0]``, the current slot after ``_slice_forecast_from_now``.
+    """
+    start = _to_dt(forecast[0][0])
+    last = _to_dt(forecast[-1][0])
+    if start is None or last is None:
+        return max_minutes
+    prev = _to_dt(forecast[-2][0]) if len(forecast) >= 2 else None
+    step = last - prev if prev is not None and last > prev else timedelta(minutes=resolution_minutes)
+    covered = int((last + step - start).total_seconds() // 60)
+    covered -= covered % resolution_minutes
+    return max(resolution_minutes, min(max_minutes, covered))
+
+
 def _create_constraint_manager(clock: Clock) -> ConstraintWindowManager:
     """Create a ConstraintWindowManager (deferred import)."""
     import hemm_core.constraints
@@ -325,6 +345,8 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Solver and constraint state
         self._constraint_manager: ConstraintWindowManager | None = None
         self._previous_plans: list[PlanMessage] = []
+        # Registry id of the hub device, set by async_setup_entry before the platforms load.
+        self.hub_device_id: str | None = None
         self._iteration_count: int = 0
         self._last_result: SolverResult | None = None
         self._lambda_history: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
@@ -554,6 +576,19 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 state[device_id] = entry
         return state
 
+    def _unreadable_state_entities(self, devices: list[dict[str, Any]]) -> list[str]:
+        """Return configured start-state entities (battery SoC, temperatures) that can't be read.
+
+        An EV's SoC is exempt: it is routinely unavailable while the car is away.
+        """
+        entity_ids: list[str] = []
+        for device in devices:
+            if device.get(CONF_DEVICE_TYPE) == DeviceType.BATTERY and device.get(CONF_SOC_ENTITY):
+                entity_ids.append(device[CONF_SOC_ENTITY])
+            if device.get(CONF_TEMP_ENTITY):
+                entity_ids.append(device[CONF_TEMP_ENTITY])
+        return [entity_id for entity_id in entity_ids if self._read_entity_float(entity_id) is None]
+
     def switch_solver(self, backend: str) -> None:
         """Switch the active solver backend at runtime."""
         old = self._solver_backend
@@ -657,14 +692,24 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # RW1 live state: measured SoC/temperature + real PV production, plus real
         # economics (feed-in tariff, outdoor temperature) on the solver itself.
         resolution_minutes = 15
-        n_slots = self._horizon_hours * (60 // resolution_minutes)
         # Anchor the horizon at the current slot before it reaches the solver: a live
         # tariff series starts at 00:00 today and the MILP aligns prices/plan
         # positionally, so the raw series would anchor the solve at midnight (planning
         # the elapsed day and applying the measured SoC/temperature at 00:00).
         price_forecast = _slice_forecast_from_now(price_forecast, now)
         t0 = _to_dt(price_forecast[0][0]) or now
+        horizon_minutes = _price_horizon_minutes(price_forecast, self._horizon_hours * 60, resolution_minutes)
+        n_slots = horizon_minutes // resolution_minutes
         generation_forecast = self._build_generation_forecast(devices, n_slots, resolution_minutes, t0) or None
+        # A measured start state the solve cannot read is not replaced by an assumed one:
+        # right after an HA restart the inverter's SoC sensor is often not set up yet, and
+        # solving then planned a 4 kW discharge from a battery below min SoC (gs, 2026-10-29).
+        unreadable = self._unreadable_state_entities(devices)
+        if unreadable:
+            _LOGGER.warning("State entities %s unreadable; skipping solve (no assumed start state)", unreadable)
+            return SolverResult(
+                status=SolverStatus.ERROR, diagnostics={"error": "state_unavailable", "entities": unreadable}
+            )
         initial_state = self._build_initial_state(devices) or None
         outdoor_temp_c = self._read_outdoor_temp()
 
@@ -676,10 +721,10 @@ class HemmCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             manifests,
             active_windows,
             price_forecast,
-            self._horizon_hours * 60,
+            horizon_minutes,
             resolution_minutes,
             self._previous_plans if self._previous_plans else None,
-            None,  # weather_forecast: per-slot series not wired here (gs heat is gas)
+            None,  # weather_forecast: per-slot series not wired here yet
             generation_forecast,
             initial_state,
         )
