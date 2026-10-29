@@ -365,7 +365,9 @@ automation:
 
 ### 1. Install (2 min)
 
-HACS support is coming soon. For now, install manually:
+**HACS (recommended):** HACS → ⋮ → Custom repositories → add `https://github.com/hemm-ems/ha-hemm` (type *Integration*) → install *HEMM Energy Optimizer* → restart Home Assistant. HACS caches release info: after a new release, use ⋮ → *Update information* on the repository before updating.
+
+**Manual:**
 
 1. Download the [latest release](https://github.com/hemm-ems/ha-hemm/releases/latest) and unzip it.
 2. Copy the `custom_components/hemm/` directory into your HA configuration directory at `config/custom_components/hemm/`. You can do this via the [File Editor add-on](https://www.home-assistant.io/integrations/file_editor/), a Samba share, or SFTP — no SSH required.
@@ -380,6 +382,15 @@ Configure:
 - **Optimization horizon:** 24 hours (default)
 - **Price adapter:** Solcast / Forecast.Solar / Template
 - **Solver backend:** MILP Central (default, recommended)
+
+#### Settings that matter in a real home
+
+These hub settings and devices decide whether a plan is economically sound. Without them the solver optimizes a different house than yours:
+
+- **Price entity:** a sensor that exposes the *forward* price curve as attributes (e.g. Tibber/Nord Pool `today`/`tomorrow` with timestamps). HEMM never invents prices: no readable curve, no solve (a repair issue says why). The horizon ends where the published curve ends, so before the day-ahead prices are out (typically ~13:00) a solve only plans until midnight.
+- **Feed-in tariff:** set it. If it is empty, exported energy is valued at the full import price of that slot, so charging from the grid and exporting at the evening peak looks profitable. With a real feed-in of a few cents the same plan loses money.
+- **House base load:** add a *Passive load* device with your typical daily consumption (kWh/day without EV and other devices you add separately). Without it the solver assumes the house uses nothing, and a battery discharge goes to the grid instead of covering your load. The load is currently modelled flat over the day.
+- **Measured start state:** a battery's SoC entity (and a room/tank temperature entity) is read at every solve. If it is missing, unknown or unavailable — typical for a minute after an HA restart — the solve is skipped and the previous plan kept, instead of planning from an assumed state.
 
 ### 3. Add Your First Device — Battery (3 min)
 
@@ -452,6 +463,10 @@ Fix: relax the hardest constraint (lower the SoC target, widen the comfort band,
 - **Solcast:** Check your API key in the Solcast integration. Free tier allows 10 requests/day.
 - **Forecast.Solar:** Verify latitude/longitude/azimuth/tilt. The API is rate-limited.
 - **Template fallback:** Use a Jinja2 template expression as a forecast source while debugging other adapters.
+
+### Battery discharges at full power in the evening although the house uses little
+
+Usually two missing settings: no **feed-in tariff** (export is then valued at the import price) and no **passive load** for the house (the solver assumes zero consumption). Set both (see *Settings that matter in a real home*); the evening discharge should drop to roughly your house load.
 
 ### Plans look wrong (battery charges during peak)
 
