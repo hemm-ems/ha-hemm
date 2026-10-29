@@ -9,6 +9,7 @@ from homeassistant.const import Platform
 
 from .const import DOMAIN
 from .coordinator import HemmCoordinator
+from .device_info import async_register_hub_device
 from .services import async_register_services, async_unregister_services
 
 if TYPE_CHECKING:
@@ -30,6 +31,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
+    # Child devices link to the hub by registry id, so it must exist before the platforms.
+    coordinator.hub_device_id = async_register_hub_device(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Register services (only once for the first entry)

@@ -80,6 +80,7 @@ class _RecordingSolver:
         self.calls.append(
             {
                 "price_forecast": price_forecast,
+                "horizon_minutes": horizon_minutes,
                 "generation_forecast": generation_forecast,
                 "initial_state": initial_state,
             }
@@ -187,6 +188,48 @@ async def test_horizon_anchored_to_current_slot(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.unit
+async def test_horizon_capped_at_end_of_published_prices(hass: HomeAssistant) -> None:
+    """Before the day-ahead prices are out, the solve stops where the price curve ends.
+
+    Tibber publishes *tomorrow* around 13:00, so a morning solve sees today's curve only.
+    The MILP step-holds the last price past the series end; a full 24 h solve would plan
+    the night on an invented price. Seen live on gs (2026-10-29): 96 slots to 08:15
+    tomorrow with only today's prices published.
+    """
+    coordinator = _make_coordinator(
+        hass,
+        [_battery(), _pv("sensor.pv_fc")],
+        now=T0 + timedelta(hours=8, minutes=30),
+        **{CONF_PRICE_ENTITY: "sensor.tariff"},
+    )
+    rec = _RecordingSolver()
+    coordinator._get_solver = lambda *a, **k: rec  # type: ignore[assignment]
+    _set_price_entity(hass, "sensor.tariff", [0.20] * 24)  # hourly, today only (ends 23:00 + 1 h)
+    hass.states.async_set("sensor.pv_fc", "1", {"watts": {(T0 + timedelta(hours=12)).isoformat(): 3000}})
+
+    await coordinator.async_run_solver()
+
+    call = rec.calls[0]
+    assert call["price_forecast"][0][0] == T0 + timedelta(hours=8)
+    # 08:00 (current slot) to 24:00 = 16 h, not the configured 24 h.
+    assert call["horizon_minutes"] == 16 * 60
+    assert len(call["generation_forecast"]["pv_1"]) == 16 * 4
+
+
+@pytest.mark.unit
+async def test_horizon_not_extended_past_configured_hours(hass: HomeAssistant) -> None:
+    """With today + tomorrow published, the configured 24 h horizon still applies."""
+    coordinator = _make_coordinator(hass, [_battery()], **{CONF_PRICE_ENTITY: "sensor.tariff"})
+    rec = _RecordingSolver()
+    coordinator._get_solver = lambda *a, **k: rec  # type: ignore[assignment]
+    _set_price_entity(hass, "sensor.tariff", [0.20] * 48)
+
+    await coordinator.async_run_solver()
+
+    assert rec.calls[0]["horizon_minutes"] == 24 * 60
+
+
+@pytest.mark.unit
 async def test_missing_price_raises_repair_and_skips_solve(hass: HomeAssistant) -> None:
     """A configured-but-unavailable price entity → repair issue + no synthetic solve."""
     coordinator = _make_coordinator(hass, [_battery()], **{CONF_PRICE_ENTITY: "sensor.tariff"})
@@ -254,6 +297,31 @@ async def test_battery_soc_reaches_initial_state(hass: HomeAssistant) -> None:
     initial = rec.calls[0]["initial_state"]
     assert initial is not None and "battery_1" in initial
     assert initial["battery_1"]["soc_kwh"] == pytest.approx(9.0 * 0.62)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("soc_state", [None, "unavailable", "unknown"])
+async def test_unreadable_battery_soc_skips_solve(hass: HomeAssistant, soc_state: str | None) -> None:
+    """A configured but unreadable SoC skips the solve instead of assuming a start state.
+
+    Seen live on gs (2026-10-29): the first solve after an HA restart ran before the
+    Kostal integration had set up its SoC sensor and planned a 4 kW discharge at 14 %.
+    """
+    coordinator = _make_coordinator(hass, [_battery("sensor.batt_soc")], **{CONF_PRICE_ENTITY: "sensor.tariff"})
+    rec = _RecordingSolver()
+    coordinator._get_solver = lambda *a, **k: rec  # type: ignore[assignment]
+    _set_price_entity(hass, "sensor.tariff", [0.20, 0.20])
+    if soc_state is not None:
+        hass.states.async_set("sensor.batt_soc", soc_state)
+
+    result = await coordinator.async_run_solver()
+
+    assert not rec.calls
+    assert result.diagnostics == {"error": "state_unavailable", "entities": ["sensor.batt_soc"]}
+
+    hass.states.async_set("sensor.batt_soc", "14")
+    await coordinator.async_run_solver()
+    assert rec.calls[0]["initial_state"]["battery_1"]["soc_kwh"] == pytest.approx(9.0 * 0.14)
 
 
 @pytest.mark.unit

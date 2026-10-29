@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_DEVICE_NAME, CONF_DEVICE_TYPE, DOMAIN
 from .coordinator import HemmCoordinator
+from .device_info import child_device_info
 
 
 async def async_setup_entry(
@@ -47,13 +48,9 @@ class HemmOverrideSwitch(CoordinatorEntity[HemmCoordinator], SwitchEntity):
         self._device_id = device_id
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_override"
         self._attr_name = f"{device_name} Override"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, f"{entry.entry_id}_{device_id}")},
-            "name": device_name,
-            "manufacturer": "HEMM",
-            "model": device_type,
-            "via_device": (DOMAIN, entry.entry_id),
-        }
+        self._attr_device_info = child_device_info(
+            entry, coordinator.hub_device_id, device_id, device_name, device_type
+        )
 
     @property
     def is_on(self) -> bool:

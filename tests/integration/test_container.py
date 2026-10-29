@@ -212,3 +212,19 @@ def test_hemm_add_device_via_options_hactl(hactl: Hactl, device_config: dict) ->
     result = hactl.config_flow_step(flow_id, configure_data, options=True)
     assert result.success, f"Configure device failed: {result.stderr}"
     assert result.json_data.get("type") == "create_entry", f"Expected create_entry: {result.json_data}"
+
+
+# Runs last in this module: the devices added above are what create the child devices
+# whose registry calls HA's frame helper reports on.
+@pytest.mark.container
+def test_hemm_no_frame_reports(hactl: Hactl) -> None:
+    """HA's frame helper reports no deprecated/bad API use by hemm (e.g. `via_device`, gone in 2027.8).
+
+    hactl truncates messages, so match the "Detected that custom integration 'hemm'" prefix
+    every frame report starts with, not the deprecation text further on.
+    """
+    result = hactl.log(unique=True)
+    assert result.success
+    entries = result.json_data if isinstance(result.json_data, list) else []
+    flagged = [e for e in entries if "integration 'hemm'" in str(e.get("message", ""))]
+    assert not flagged, flagged
